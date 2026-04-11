@@ -1,0 +1,1 @@
+if('serviceWorker' in navigator) navigator.serviceWorker.register('/barcode-scanner/dev-sw.js?dev-sw', { scope: '/barcode-scanner/', type: 'classic' })
