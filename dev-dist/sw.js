@@ -67,7 +67,7 @@ if (!self.define) {
     });
   };
 }
-define(['./workbox-7143bb0f'], (function (workbox) { 'use strict';
+define(['./workbox-c43fcf07'], (function (workbox) { 'use strict';
 
   self.skipWaiting();
   workbox.clientsClaim();
@@ -82,11 +82,18 @@ define(['./workbox-7143bb0f'], (function (workbox) { 'use strict';
     "revision": "68aa7f5ae34280dd87d01432dcac45a2"
   }], {});
   workbox.cleanupOutdatedCaches();
-  workbox.registerRoute(/^https?:\/\/.*\.(js|css|woff|woff2|ttf|eot|ico|png|jpg|jpeg|svg|gif)$/, new workbox.CacheFirst({
+  workbox.registerRoute(/^https?:\/\/.*\.(woff|woff2|ttf|eot|ico|png|jpg|jpeg|svg|gif)$/, new workbox.CacheFirst({
     "cacheName": "static-assets",
     plugins: [new workbox.ExpirationPlugin({
       maxEntries: 100,
       maxAgeSeconds: 2592000
+    })]
+  }), 'GET');
+  workbox.registerRoute(/^https?:\/\/.*\.(js|css)$/, new workbox.StaleWhileRevalidate({
+    "cacheName": "app-code",
+    plugins: [new workbox.ExpirationPlugin({
+      maxEntries: 50,
+      maxAgeSeconds: 604800
     })]
   }), 'GET');
 

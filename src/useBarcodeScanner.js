@@ -17,6 +17,10 @@ const DECODE_WIDTH = 640;
 const CONTRAST_AFTER_FAILS = 10;
 const COOLDOWN_MS = 1500;
 
+// Valid barcode format: prefix (GNED, GN, F, M, G, L) followed by digits only.
+// Order matters — GNED must be checked before GN (longer prefix first).
+const VALID_BARCODE_RE = /^(GNED|GN|F|M|G|L)\d+$/;
+
 export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
   const rafRef = useRef(null);
   const canvasRef = useRef(null);
@@ -122,8 +126,9 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
               scanImageData(imageData)
                 .then((symbols) => {
                   if (symbols.length > 0) {
-                    const text = symbols[0].decode();
-                    if (text && text !== lastScannedRef.current) {
+                    const text = symbols[0].decode().trim();
+                    // Only accept barcodes matching known format
+                    if (text && VALID_BARCODE_RE.test(text) && text !== lastScannedRef.current) {
                       clearTimeout(cooldownRef.current);
                       lastScannedRef.current = text;
                       cooldownRef.current = setTimeout(() => {
@@ -132,7 +137,7 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
                       failsRef.current = 0;
                       onScan(text);
                     } else {
-                      // Same barcode still in view — not a failure
+                      failsRef.current++;
                     }
                   } else {
                     failsRef.current++;
