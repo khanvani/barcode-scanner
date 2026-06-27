@@ -1,8 +1,15 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { scanImageData } from '@undecaf/zbar-wasm';
 
-// Scan interval in ms (~12 fps). Barcodes don't need 60fps detection.
-const SCAN_INTERVAL_MS = 80;
+// Scan every ~50ms (~20fps) — fast enough to feel instant, light enough for mobile
+const SCAN_INTERVAL_MS = 50;
+
+// Crop the center 60% of the frame — where the barcode actually is.
+// This dramatically reduces pixel count while keeping decode accuracy high.
+const CROP_RATIO = 0.6;
+
+// Output canvas width for the cropped region (pixels sent to ZBar)
+const SCAN_WIDTH = 600;
 
 export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
   const timerRef = useRef(null);
@@ -11,6 +18,7 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
   const lastScannedRef = useRef('');
   const debounceRef = useRef(null);
   const scanningRef = useRef(false);
+  const busyRef = useRef(false);
 
   const stop = useCallback(() => {
     scanningRef.current = false;
@@ -27,7 +35,6 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
   useEffect(() => {
     if (!active || !videoRef.current) return;
 
-    // Reuse a single offscreen canvas
     if (!canvasRef.current) {
       canvasRef.current = document.createElement('canvas');
     }
@@ -35,16 +42,14 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
     let started = false;
-    let lastCanvasW = 0;
-    let lastCanvasH = 0;
 
     navigator.mediaDevices
       .getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
-          // 640×480 is plenty for barcode detection, reduces heat on mobile
-          width: { ideal: 640 },
-          height: { ideal: 480 },
+          // 1280×720 gives the camera good focus & clarity for barcodes
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
         },
         audio: false,
       })
@@ -57,54 +62,70 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
         started = true;
         scanningRef.current = true;
 
-        const tick = async () => {
+        const tick = () => {
           if (!scanningRef.current) return;
 
-          if (video.readyState === video.HAVE_ENOUGH_DATA) {
-            const w = video.videoWidth;
-            const h = video.videoHeight;
-            if (w && h) {
-              // Downscale to max 640px wide
-              const scale = Math.min(1, 640 / w);
-              const cw = Math.round(w * scale);
-              const ch = Math.round(h * scale);
+          // Skip if previous decode is still in-flight (prevents pileup)
+          if (busyRef.current) {
+            timerRef.current = setTimeout(tick, SCAN_INTERVAL_MS);
+            return;
+          }
 
-              // Only resize canvas when dimensions change (avoids GPU stall)
-              if (cw !== lastCanvasW || ch !== lastCanvasH) {
+          if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+
+            if (vw && vh) {
+              // Crop center portion of the video frame
+              const cropW = Math.round(vw * CROP_RATIO);
+              const cropH = Math.round(vh * CROP_RATIO);
+              const sx = Math.round((vw - cropW) / 2);
+              const sy = Math.round((vh - cropH) / 2);
+
+              // Scale cropped region to SCAN_WIDTH for consistent decode speed
+              const aspect = cropH / cropW;
+              const cw = SCAN_WIDTH;
+              const ch = Math.round(SCAN_WIDTH * aspect);
+
+              // Resize canvas only when needed
+              if (canvas.width !== cw || canvas.height !== ch) {
                 canvas.width = cw;
                 canvas.height = ch;
-                lastCanvasW = cw;
-                lastCanvasH = ch;
               }
 
-              ctx.drawImage(video, 0, 0, cw, ch);
+              // Draw only the center crop, scaled down
+              ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, cw, ch);
               const imageData = ctx.getImageData(0, 0, cw, ch);
 
-              try {
-                const symbols = await scanImageData(imageData);
-                if (symbols.length > 0) {
-                  const text = symbols[0].decode();
-                  if (text && text !== lastScannedRef.current) {
-                    clearTimeout(debounceRef.current);
-                    lastScannedRef.current = text;
-                    debounceRef.current = setTimeout(() => {
-                      lastScannedRef.current = '';
-                    }, 3000);
-                    onScan(text);
+              busyRef.current = true;
+              scanImageData(imageData)
+                .then((symbols) => {
+                  if (symbols.length > 0) {
+                    const text = symbols[0].decode();
+                    if (text && text !== lastScannedRef.current) {
+                      clearTimeout(debounceRef.current);
+                      lastScannedRef.current = text;
+                      debounceRef.current = setTimeout(() => {
+                        lastScannedRef.current = '';
+                      }, 2000);
+                      onScan(text);
+                    }
                   }
-                }
-              } catch (_) {
-                // no symbol in frame — normal, keep scanning
-              }
+                })
+                .catch(() => {
+                  // no barcode found — normal
+                })
+                .finally(() => {
+                  busyRef.current = false;
+                });
             }
           }
 
-          // Throttle: wait SCAN_INTERVAL_MS before next decode attempt
           timerRef.current = setTimeout(tick, SCAN_INTERVAL_MS);
         };
 
-        // Start first scan after a short delay to let video stabilize
-        timerRef.current = setTimeout(tick, SCAN_INTERVAL_MS);
+        // Begin scanning immediately
+        timerRef.current = setTimeout(tick, 0);
       })
       .catch((err) => {
         if (err?.name === 'NotAllowedError') {
