@@ -37,7 +37,7 @@ export default defineConfig({
       workbox: {
         runtimeCaching: [
           {
-            urlPattern: /^https?:\/\/.*\.(js|css|woff|woff2|ttf|eot|ico|png|jpg|jpeg|svg|gif)$/,
+            urlPattern: /^https?:\/\/.*\.(woff|woff2|ttf|eot|ico|png|jpg|jpeg|svg|gif)$/,
             handler: 'CacheFirst',
             options: {
               cacheName: 'static-assets',
@@ -46,10 +46,25 @@ export default defineConfig({
                 maxAgeSeconds: 60 * 60 * 24 * 30
               }
             }
+          },
+          {
+            // JS and CSS use StaleWhileRevalidate — serves cache instantly
+            // but fetches fresh version in background for next load
+            urlPattern: /^https?:\/\/.*\.(js|css)$/,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'app-code',
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 * 24 * 7
+              }
+            }
           }
         ],
         navigateFallback: null,
-        cleanupOutdatedCaches: true
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true
       }
     })
   ],
