@@ -1,8 +1,11 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { scanImageData } from '@undecaf/zbar-wasm';
 
+// Scan interval in ms (~12 fps). Barcodes don't need 60fps detection.
+const SCAN_INTERVAL_MS = 80;
+
 export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
-  const rafRef = useRef(null);
+  const timerRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const lastScannedRef = useRef('');
@@ -11,7 +14,7 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
 
   const stop = useCallback(() => {
     scanningRef.current = false;
-    cancelAnimationFrame(rafRef.current);
+    clearTimeout(timerRef.current);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -32,13 +35,16 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
     let started = false;
+    let lastCanvasW = 0;
+    let lastCanvasH = 0;
 
     navigator.mediaDevices
       .getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          // 640×480 is plenty for barcode detection, reduces heat on mobile
+          width: { ideal: 640 },
+          height: { ideal: 480 },
         },
         audio: false,
       })
@@ -58,12 +64,21 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
             const w = video.videoWidth;
             const h = video.videoHeight;
             if (w && h) {
-              // Downscale to 640px wide for speed — ZBar is fast enough
+              // Downscale to max 640px wide
               const scale = Math.min(1, 640 / w);
-              canvas.width  = Math.round(w * scale);
-              canvas.height = Math.round(h * scale);
-              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-              const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const cw = Math.round(w * scale);
+              const ch = Math.round(h * scale);
+
+              // Only resize canvas when dimensions change (avoids GPU stall)
+              if (cw !== lastCanvasW || ch !== lastCanvasH) {
+                canvas.width = cw;
+                canvas.height = ch;
+                lastCanvasW = cw;
+                lastCanvasH = ch;
+              }
+
+              ctx.drawImage(video, 0, 0, cw, ch);
+              const imageData = ctx.getImageData(0, 0, cw, ch);
 
               try {
                 const symbols = await scanImageData(imageData);
@@ -84,10 +99,12 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
             }
           }
 
-          rafRef.current = requestAnimationFrame(tick);
+          // Throttle: wait SCAN_INTERVAL_MS before next decode attempt
+          timerRef.current = setTimeout(tick, SCAN_INTERVAL_MS);
         };
 
-        rafRef.current = requestAnimationFrame(tick);
+        // Start first scan after a short delay to let video stabilize
+        timerRef.current = setTimeout(tick, SCAN_INTERVAL_MS);
       })
       .catch((err) => {
         if (err?.name === 'NotAllowedError') {
