@@ -2,27 +2,20 @@ import { useEffect, useRef, useCallback } from 'react';
 import { scanImageData } from '@undecaf/zbar-wasm';
 
 /**
- * Production barcode scanner — optimized for 1D barcodes (Code128/Code39)
- * on mobile devices in variable lighting.
+ * Fast barcode scanner for 1D codes (Code128, Code39, EAN, etc.)
  *
- * Design decisions:
- * - Camera 1280×720 with continuous autofocus for sharp barcode edges
- * - requestAnimationFrame, skip every 2nd frame (~30fps effective scan rate)
- * - Full-width × center 50% height crop — matches 1D barcode natural shape
- * - Minimum 640px decode width for reliable thin-bar resolution
- * - Histogram-stretch contrast enhancement after 8 consecutive failures
- * - Single-read confirmation (no multi-frame requirement)
- * - Zero initial delay — first frame scanned immediately
+ * Key design:
+ * - 1280×720 camera for good module resolution
+ * - Scan every frame via rAF (busyRef prevents overlap naturally)
+ * - Full-width horizontal band crop (center 40% height)
+ * - Canvas at 640px wide — proven sweet spot for ZBar decode speed vs accuracy
+ * - Histogram stretch kicks in after 10 consecutive failures
+ * - Autofocus applied post-stream via track API (not in constraints — avoids OverconstrainedError)
  */
 
-// Minimum width sent to ZBar — ensures enough pixels per barcode module
-const MIN_DECODE_WIDTH = 640;
-
-// Failures before applying contrast enhancement
-const CONTRAST_THRESHOLD = 8;
-
-// Cooldown after successful scan (prevents re-firing same barcode)
-const SCAN_COOLDOWN_MS = 1500;
+const DECODE_WIDTH = 640;
+const CONTRAST_AFTER_FAILS = 10;
+const COOLDOWN_MS = 1500;
 
 export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
   const rafRef = useRef(null);
@@ -32,8 +25,7 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
   const cooldownRef = useRef(null);
   const scanningRef = useRef(false);
   const busyRef = useRef(false);
-  const frameRef = useRef(0);
-  const failCountRef = useRef(0);
+  const failsRef = useRef(0);
 
   const stop = useCallback(() => {
     scanningRef.current = false;
@@ -56,7 +48,6 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
     }
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
     let started = false;
 
     navigator.mediaDevices
@@ -65,41 +56,35 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
           facingMode: { ideal: 'environment' },
           width: { ideal: 1280 },
           height: { ideal: 720 },
-          // Request continuous autofocus for sharper barcode capture
-          focusMode: { ideal: 'continuous' },
         },
         audio: false,
       })
       .then((stream) => {
         streamRef.current = stream;
         const video = videoRef.current;
-        if (!video) { stream.getTracks().forEach((t) => t.stop()); return; }
+        if (!video) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
         video.srcObject = stream;
         video.play();
         started = true;
         scanningRef.current = true;
-        failCountRef.current = 0;
+        failsRef.current = 0;
 
-        // Try to enable continuous autofocus via track capabilities
+        // Enable continuous autofocus AFTER stream is acquired (safe approach)
         try {
           const track = stream.getVideoTracks()[0];
           const caps = track.getCapabilities?.();
-          if (caps?.focusMode?.includes('continuous')) {
-            track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+          if (caps && caps.focusMode && caps.focusMode.includes('continuous')) {
+            track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
           }
-        } catch (_) { /* not supported — that's fine */ }
+        } catch (_) {}
 
         const tick = () => {
           if (!scanningRef.current) return;
 
-          // Skip every other frame — gives ~30fps scan rate, saves CPU
-          frameRef.current++;
-          if (frameRef.current % 2 !== 0) {
-            rafRef.current = requestAnimationFrame(tick);
-            return;
-          }
-
-          // Don't pile up decodes
+          // If previous decode hasn't finished, skip this frame (natural throttle)
           if (busyRef.current) {
             rafRef.current = requestAnimationFrame(tick);
             return;
@@ -109,37 +94,28 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
             const vw = video.videoWidth;
             const vh = video.videoHeight;
 
-            if (vw && vh) {
+            if (vw > 0 && vh > 0) {
               busyRef.current = true;
 
-              // Crop: full width × center 50% height
-              // This matches how users hold a card — barcode spans horizontally
-              const cropH = Math.round(vh * 0.5);
-              const sx = 0;
-              const sy = Math.round((vh - cropH) / 2);
-              const sw = vw;
-              const sh = cropH;
+              // Crop center 40% height, full width — natural 1D barcode zone
+              const bandH = Math.round(vh * 0.4);
+              const sy = Math.round((vh - bandH) / 2);
 
-              // Scale to at least MIN_DECODE_WIDTH, maintain aspect ratio
-              const scale = Math.max(1, MIN_DECODE_WIDTH / sw);
-              const cw = Math.round(sw * scale);
-              const ch = Math.round(sh * scale);
+              // Target canvas: DECODE_WIDTH × proportional height
+              const aspect = bandH / vw;
+              const cw = DECODE_WIDTH;
+              const ch = Math.round(DECODE_WIDTH * aspect);
 
-              // Since source is 1280 and MIN_DECODE_WIDTH is 640, scale will be ≤1
-              // Just use the source crop width directly (capped)
-              const finalW = Math.min(sw, MIN_DECODE_WIDTH);
-              const finalH = Math.round(sh * (finalW / sw));
-
-              if (canvas.width !== finalW || canvas.height !== finalH) {
-                canvas.width = finalW;
-                canvas.height = finalH;
+              if (canvas.width !== cw || canvas.height !== ch) {
+                canvas.width = cw;
+                canvas.height = ch;
               }
 
-              ctx.drawImage(video, sx, sy, sw, sh, 0, 0, finalW, finalH);
-              const imageData = ctx.getImageData(0, 0, finalW, finalH);
+              ctx.drawImage(video, 0, sy, vw, bandH, 0, 0, cw, ch);
+              const imageData = ctx.getImageData(0, 0, cw, ch);
 
-              // Apply histogram stretch after sustained failures (dim lighting)
-              if (failCountRef.current >= CONTRAST_THRESHOLD) {
+              // Contrast help in dim lighting
+              if (failsRef.current >= CONTRAST_AFTER_FAILS) {
                 histogramStretch(imageData);
               }
 
@@ -152,16 +128,18 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
                       lastScannedRef.current = text;
                       cooldownRef.current = setTimeout(() => {
                         lastScannedRef.current = '';
-                      }, SCAN_COOLDOWN_MS);
-                      failCountRef.current = 0;
+                      }, COOLDOWN_MS);
+                      failsRef.current = 0;
                       onScan(text);
+                    } else {
+                      // Same barcode still in view — not a failure
                     }
                   } else {
-                    failCountRef.current++;
+                    failsRef.current++;
                   }
                 })
                 .catch(() => {
-                  failCountRef.current++;
+                  failsRef.current++;
                 })
                 .finally(() => {
                   busyRef.current = false;
@@ -172,7 +150,6 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
           rafRef.current = requestAnimationFrame(tick);
         };
 
-        // Start immediately — zero delay
         rafRef.current = requestAnimationFrame(tick);
       })
       .catch((err) => {
@@ -194,31 +171,28 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
 }
 
 /**
- * Histogram stretch — proper image processing for contrast enhancement.
- * Finds actual min/max brightness in the image and stretches to full 0–255 range.
- * Much more effective than arbitrary darkening/brightening.
+ * Histogram stretch — finds actual min/max brightness and maps to full 0–255 range.
+ * Only the green channel is sampled to find range (fastest), then all RGB are stretched.
  */
 function histogramStretch(imageData) {
-  const data = imageData.data;
-  const len = data.length;
+  const d = imageData.data;
+  const len = d.length;
+  let lo = 255, hi = 0;
 
-  // Find min/max luminance (using green channel as proxy — fastest)
-  let min = 255, max = 0;
-  for (let i = 1; i < len; i += 4) {
-    const g = data[i];
-    if (g < min) min = g;
-    if (g > max) max = g;
+  // Sample every 4th pixel for speed (still statistically accurate)
+  for (let i = 1; i < len; i += 16) {
+    const v = d[i]; // green channel
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
   }
 
-  // Avoid division by zero or near-zero range (already good contrast)
-  const range = max - min;
-  if (range < 30) return;
+  const range = hi - lo;
+  if (range < 40) return; // already decent contrast
 
-  const scale = 255 / range;
+  const factor = 255 / range;
   for (let i = 0; i < len; i += 4) {
-    data[i]     = Math.min(255, Math.max(0, (data[i] - min) * scale));     // R
-    data[i + 1] = Math.min(255, Math.max(0, (data[i + 1] - min) * scale)); // G
-    data[i + 2] = Math.min(255, Math.max(0, (data[i + 2] - min) * scale)); // B
-    // Alpha unchanged
+    d[i]     = ((d[i] - lo) * factor) | 0;
+    d[i + 1] = ((d[i + 1] - lo) * factor) | 0;
+    d[i + 2] = ((d[i + 2] - lo) * factor) | 0;
   }
 }
