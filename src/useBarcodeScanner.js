@@ -1,28 +1,42 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { scanImageData } from '@undecaf/zbar-wasm';
 
-// Scan every ~50ms (~20fps) — fast enough to feel instant, light enough for mobile
-const SCAN_INTERVAL_MS = 50;
+/**
+ * High-speed barcode scanner.
+ *
+ * Strategy for fast detection:
+ * 1. Use requestAnimationFrame (no throttle) — scan as fast as the device allows
+ * 2. Guard against overlapping decodes with a busy flag
+ * 3. Scan a THIN horizontal strip (center band) — only ~50px tall
+ *    For 1D barcodes (Code128/Code39) this is all ZBar needs and it's 10x faster
+ *    than scanning a full square crop
+ * 4. Every 5th frame, try a larger center square as fallback for 2D codes
+ * 5. Camera at 1280×720 for good autofocus
+ */
 
-// Crop the center 60% of the frame — where the barcode actually is.
-// This dramatically reduces pixel count while keeping decode accuracy high.
-const CROP_RATIO = 0.6;
+// Horizontal strip: 400px wide × 50px tall = 20,000 pixels (vs 360,000 for a square crop)
+const STRIP_WIDTH = 400;
+const STRIP_HEIGHT = 50;
 
-// Output canvas width for the cropped region (pixels sent to ZBar)
-const SCAN_WIDTH = 600;
+// Square fallback for 2D codes: 300×300 = 90,000 pixels
+const SQUARE_SIZE = 300;
+
+// Try square crop every Nth frame
+const SQUARE_EVERY_N = 5;
 
 export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
-  const timerRef = useRef(null);
+  const rafRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const lastScannedRef = useRef('');
   const debounceRef = useRef(null);
   const scanningRef = useRef(false);
   const busyRef = useRef(false);
+  const frameCountRef = useRef(0);
 
   const stop = useCallback(() => {
     scanningRef.current = false;
-    clearTimeout(timerRef.current);
+    cancelAnimationFrame(rafRef.current);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -47,7 +61,6 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
       .getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
-          // 1280×720 gives the camera good focus & clarity for barcodes
           width: { ideal: 1280 },
           height: { ideal: 720 },
         },
@@ -62,70 +75,83 @@ export function useBarcodeScanner({ videoRef, onScan, onError, active }) {
         started = true;
         scanningRef.current = true;
 
+        const decode = (imageData) => {
+          return scanImageData(imageData).then((symbols) => {
+            if (symbols.length > 0) {
+              const text = symbols[0].decode();
+              if (text && text !== lastScannedRef.current) {
+                clearTimeout(debounceRef.current);
+                lastScannedRef.current = text;
+                debounceRef.current = setTimeout(() => {
+                  lastScannedRef.current = '';
+                }, 1500);
+                onScan(text);
+                return true;
+              }
+            }
+            return false;
+          }).catch(() => false);
+        };
+
         const tick = () => {
           if (!scanningRef.current) return;
 
-          // Skip if previous decode is still in-flight (prevents pileup)
           if (busyRef.current) {
-            timerRef.current = setTimeout(tick, SCAN_INTERVAL_MS);
+            rafRef.current = requestAnimationFrame(tick);
             return;
           }
 
-          if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          if (video.readyState >= video.HAVE_ENOUGH_DATA) {
             const vw = video.videoWidth;
             const vh = video.videoHeight;
 
             if (vw && vh) {
-              // Crop center portion of the video frame
-              const cropW = Math.round(vw * CROP_RATIO);
-              const cropH = Math.round(vh * CROP_RATIO);
-              const sx = Math.round((vw - cropW) / 2);
-              const sy = Math.round((vh - cropH) / 2);
+              busyRef.current = true;
+              frameCountRef.current++;
 
-              // Scale cropped region to SCAN_WIDTH for consistent decode speed
-              const aspect = cropH / cropW;
-              const cw = SCAN_WIDTH;
-              const ch = Math.round(SCAN_WIDTH * aspect);
+              const useSquare = (frameCountRef.current % SQUARE_EVERY_N === 0);
 
-              // Resize canvas only when needed
+              let cw, ch, sx, sy, sw, sh;
+
+              if (useSquare) {
+                // Square center crop for 2D barcodes
+                const cropSize = Math.min(vw, vh) * 0.5;
+                sx = Math.round((vw - cropSize) / 2);
+                sy = Math.round((vh - cropSize) / 2);
+                sw = Math.round(cropSize);
+                sh = Math.round(cropSize);
+                cw = SQUARE_SIZE;
+                ch = SQUARE_SIZE;
+              } else {
+                // Thin horizontal strip across center — ultra fast for 1D barcodes
+                const stripW = vw * 0.8;
+                const stripH = vw * 0.05; // ~5% of width as height
+                sx = Math.round((vw - stripW) / 2);
+                sy = Math.round((vh - stripH) / 2);
+                sw = Math.round(stripW);
+                sh = Math.round(stripH);
+                cw = STRIP_WIDTH;
+                ch = STRIP_HEIGHT;
+              }
+
               if (canvas.width !== cw || canvas.height !== ch) {
                 canvas.width = cw;
                 canvas.height = ch;
               }
 
-              // Draw only the center crop, scaled down
-              ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, cw, ch);
+              ctx.drawImage(video, sx, sy, sw, sh, 0, 0, cw, ch);
               const imageData = ctx.getImageData(0, 0, cw, ch);
 
-              busyRef.current = true;
-              scanImageData(imageData)
-                .then((symbols) => {
-                  if (symbols.length > 0) {
-                    const text = symbols[0].decode();
-                    if (text && text !== lastScannedRef.current) {
-                      clearTimeout(debounceRef.current);
-                      lastScannedRef.current = text;
-                      debounceRef.current = setTimeout(() => {
-                        lastScannedRef.current = '';
-                      }, 2000);
-                      onScan(text);
-                    }
-                  }
-                })
-                .catch(() => {
-                  // no barcode found — normal
-                })
-                .finally(() => {
-                  busyRef.current = false;
-                });
+              decode(imageData).finally(() => {
+                busyRef.current = false;
+              });
             }
           }
 
-          timerRef.current = setTimeout(tick, SCAN_INTERVAL_MS);
+          rafRef.current = requestAnimationFrame(tick);
         };
 
-        // Begin scanning immediately
-        timerRef.current = setTimeout(tick, 0);
+        rafRef.current = requestAnimationFrame(tick);
       })
       .catch((err) => {
         if (err?.name === 'NotAllowedError') {
