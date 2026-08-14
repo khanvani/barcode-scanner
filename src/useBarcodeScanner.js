@@ -2,17 +2,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { scanImageData, ZBarScanner, ZBarSymbolType, ZBarConfigType } from "@undecaf/zbar-wasm";
 
 /**
- * 1D barcode scanner (Code128 / Code39).
+ * Sewa-card barcode scanner (Code128 / Code39 / Code93 / QR).
  *
- * - Native-resolution crop (cap 1920px, upscale only if the camera is tiny)
- * - No bilinear blur on the crop
- * - Overlay band matches the visible cover crop (center 50% of the viewfinder)
- * - Native BarcodeDetector when available, ZBar WASM fallback
- * - Histogram stretch only for genuinely low-contrast frames
+ * - Overlay is the aim box; decode also searches overlapping strips of the full view
+ * - Left-biased crops skip the signature that sits beside Construction Sewa barcodes
+ * - Never stop on an invalid decode — keep trying until a valid ID is found
+ * - Native BarcodeDetector + ZBar; contrast stretch / binarize only as fallback
  */
 
-export const SCAN_BAND_TOP = 0.22;
-export const SCAN_BAND_HEIGHT = 0.5;
+export const SCAN_BAND_TOP = 0.34;
+export const SCAN_BAND_HEIGHT = 0.30;
+export const SCAN_BAND_LEFT = 0.08;
+export const SCAN_BAND_WIDTH = 0.84;
 
 const MAX_DECODE_WIDTH = 1920;
 const MIN_DECODE_WIDTH = 1280;
@@ -26,7 +27,26 @@ const SPECIAL_CHAR_RE = /[^A-Z0-9]/;
 // Longer first — peeled off before validate/store when the rest is a valid code.
 const STRIP_WRAPPERS = ["Z3AHM", "AHM"];
 
-const NATIVE_FORMATS = ["code_128", "code_39"];
+const NATIVE_FORMATS = ["code_128", "code_39", "code_93", "codabar", "qr_code"];
+
+const OVERLAY_WINDOW = {
+  top: SCAN_BAND_TOP,
+  height: SCAN_BAND_HEIGHT,
+  left: SCAN_BAND_LEFT,
+  width: SCAN_BAND_WIDTH,
+};
+const LEFT_SAFE = { left: 0.02, width: 0.76 };
+
+/** Full-view strips so a barcode at the top, middle, or bottom still reads. */
+const SEARCH_STRIPS = [
+  { top: 0.04, height: 0.26, ...LEFT_SAFE },
+  { top: 0.22, height: 0.26, ...LEFT_SAFE },
+  { top: 0.40, height: 0.26, ...LEFT_SAFE },
+  { top: 0.56, height: 0.28, ...LEFT_SAFE },
+  { top: 0.68, height: 0.28, ...LEFT_SAFE },
+];
+
+let rotateIdx = 0;
 
 export function useBarcodeScanner({ videoRef, onScan, onReject, onError, active, paused = false }) {
   const rafRef = useRef(null);
@@ -355,12 +375,22 @@ function clientToVideoPoint(video, clientX, clientY) {
 async function createZBarScanner() {
   const scanner = await ZBarScanner.create();
   scanner.setConfig(ZBarSymbolType.ZBAR_NONE, ZBarConfigType.ZBAR_CFG_ENABLE, 0);
-  scanner.setConfig(ZBarSymbolType.ZBAR_CODE128, ZBarConfigType.ZBAR_CFG_ENABLE, 1);
-  scanner.setConfig(ZBarSymbolType.ZBAR_CODE39, ZBarConfigType.ZBAR_CFG_ENABLE, 1);
-  scanner.setConfig(ZBarSymbolType.ZBAR_CODE128, ZBarConfigType.ZBAR_CFG_ASCII, 1);
-  scanner.setConfig(ZBarSymbolType.ZBAR_CODE39, ZBarConfigType.ZBAR_CFG_ASCII, 1);
+  const enabled = [
+    ZBarSymbolType.ZBAR_CODE128,
+    ZBarSymbolType.ZBAR_CODE39,
+    ZBarSymbolType.ZBAR_CODE93,
+    ZBarSymbolType.ZBAR_CODABAR,
+    ZBarSymbolType.ZBAR_QRCODE,
+  ];
+  for (const type of enabled) {
+    scanner.setConfig(type, ZBarConfigType.ZBAR_CFG_ENABLE, 1);
+    scanner.setConfig(type, ZBarConfigType.ZBAR_CFG_ASCII, 1);
+  }
   scanner.setConfig(ZBarSymbolType.ZBAR_CODE128, ZBarConfigType.ZBAR_CFG_MIN_LEN, 2);
   scanner.setConfig(ZBarSymbolType.ZBAR_CODE39, ZBarConfigType.ZBAR_CFG_MIN_LEN, 4);
+  scanner.setConfig(ZBarSymbolType.ZBAR_CODE93, ZBarConfigType.ZBAR_CFG_MIN_LEN, 4);
+  scanner.setConfig(ZBarSymbolType.ZBAR_CODE128, ZBarConfigType.ZBAR_CFG_UNCERTAINTY, 0);
+  scanner.setConfig(ZBarSymbolType.ZBAR_CODE39, ZBarConfigType.ZBAR_CFG_UNCERTAINTY, 0);
   scanner.setConfig(ZBarSymbolType.ZBAR_NONE, ZBarConfigType.ZBAR_CFG_Y_DENSITY, 1);
   scanner.setConfig(ZBarSymbolType.ZBAR_NONE, ZBarConfigType.ZBAR_CFG_X_DENSITY, 1);
   scanner.setConfig(ZBarSymbolType.ZBAR_NONE, ZBarConfigType.ZBAR_CFG_TEST_INVERTED, 1);
@@ -382,27 +412,41 @@ function createNativeDetector() {
   }
 }
 
+function scanAttemptsThisFrame() {
+  const overlay = { ...OVERLAY_WINDOW, scale: 1, smooth: false, enhance: false };
+  const overlayLeft = { ...OVERLAY_WINDOW, ...LEFT_SAFE, scale: 1, smooth: false, enhance: false };
+  const extras = [
+    ...SEARCH_STRIPS.map((s) => ({ ...s, scale: 1, smooth: false, enhance: false })),
+    { ...OVERLAY_WINDOW, scale: 2, smooth: true, enhance: true },
+    { top: 0.62, height: 0.34, ...LEFT_SAFE, scale: 2, smooth: true, enhance: true },
+  ];
+  const bottom = { top: 0.66, height: 0.30, ...LEFT_SAFE, scale: 1, smooth: false, enhance: false };
+  const extra = extras[rotateIdx % extras.length];
+  rotateIdx += 1;
+  return [overlay, overlayLeft, bottom, extra];
+}
+
 async function decodeFrame(video, canvas, ctx, vw, vh, scanner, detector) {
   const vis = getCoverVisibleRect(video);
-  const attempts = [
-    { top: SCAN_BAND_TOP, height: SCAN_BAND_HEIGHT, scale: 1, smooth: false },
-    { top: SCAN_BAND_TOP, height: SCAN_BAND_HEIGHT, scale: 2, smooth: true },
-    { top: 0.36, height: 0.28, scale: 2, smooth: true },
-  ];
+  const collected = [];
 
-  for (const attempt of attempts) {
+  for (const attempt of scanAttemptsThisFrame()) {
     const texts = await decodeCrop(video, canvas, ctx, vis, vw, vh, attempt, scanner, detector);
-    if (texts.length) return texts;
+    if (!texts.length) continue;
+    collected.push(...texts);
+    if (textsIncludeAccepted(texts)) return collected;
   }
-  return [];
+  return collected;
 }
 
 async function decodeCrop(video, canvas, ctx, vis, vw, vh, attempt, scanner, detector) {
   const visW = vis.visW || vw;
   const visH = vis.visH || vh;
-  const sx = vis.ox;
+  const left = attempt.left ?? 0;
+  const width = attempt.width ?? 1;
+  const sx = vis.ox + visW * left;
   const sy = vis.oy + visH * attempt.top;
-  const sw = visW;
+  const sw = visW * width;
   const sh = visH * attempt.height;
 
   let dstW = Math.round(sw * attempt.scale);
@@ -427,11 +471,25 @@ async function decodeCrop(video, canvas, ctx, vis, vw, vh, attempt, scanner, det
 
   ctx.drawImage(video, sx, sy, sw, sh, 0, 0, dstW, dstH);
   const imageData = ctx.getImageData(0, 0, dstW, dstH);
-  if (histogramStretch(imageData)) {
-    ctx.putImageData(imageData, 0, 0);
+
+  let texts = await decodeImage(imageData, canvas, scanner, detector);
+  if (textsIncludeAccepted(texts) || !attempt.enhance) return texts;
+
+  const stretched = cloneImageData(imageData);
+  if (histogramStretch(stretched)) {
+    ctx.putImageData(stretched, 0, 0);
+    const extra = await decodeImage(stretched, canvas, scanner, detector);
+    texts = mergeTexts(texts, extra);
+    if (textsIncludeAccepted(texts)) return texts;
   }
 
-  return decodeImage(imageData, canvas, scanner, detector);
+  const binary = cloneImageData(imageData);
+  if (binarizeImageData(binary)) {
+    ctx.putImageData(binary, 0, 0);
+    const extra = await decodeImage(binary, canvas, scanner, detector);
+    texts = mergeTexts(texts, extra);
+  }
+  return texts;
 }
 
 async function decodeImage(imageData, canvas, scanner, detector) {
@@ -457,6 +515,20 @@ async function decodeImage(imageData, canvas, scanner, detector) {
   }
 
   return texts;
+}
+
+function textsIncludeAccepted(texts) {
+  if (!texts?.length) return false;
+  return texts.some((t) => isAcceptedBarcode(normalizeBarcode(t)));
+}
+
+function mergeTexts(a, b) {
+  if (!b?.length) return a;
+  return a.length ? a.concat(b) : b;
+}
+
+function cloneImageData(src) {
+  return new ImageData(new Uint8ClampedArray(src.data), src.width, src.height);
 }
 
 function handleDecodedTexts(texts, refs) {
@@ -499,7 +571,7 @@ function normalizeBarcode(text) {
     if (raw.charCodeAt(i) >= 32) out += raw[i];
   }
   const cleaned = out
-    .replace(/^\]C1/i, "")
+    .replace(/^\][A-Z][0-9]/i, "")
     .replace(/^\*+|\*+$/g, "")
     .replace(/[\s\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000\uFEFF]+/g, "")
     .toUpperCase();
@@ -521,6 +593,52 @@ function stripLeadingWrappers(text) {
 function isAcceptedBarcode(text) {
   if (!text || SPECIAL_CHAR_RE.test(text)) return false;
   return VALID_BARCODE_RE.test(text);
+}
+
+/**
+ * Otsu threshold on luma. Helps washed-out PDF / screen barcodes.
+ */
+function binarizeImageData(imageData) {
+  const d = imageData.data;
+  const len = d.length;
+  const hist = new Uint32Array(256);
+  let count = 0;
+  for (let i = 0; i < len; i += 16) {
+    const y = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
+    hist[y] += 1;
+    count += 1;
+  }
+  if (count < 16) return false;
+
+  let sum = 0;
+  for (let i = 0; i < 256; i++) sum += i * hist[i];
+  let sumB = 0;
+  let wB = 0;
+  let maxVar = 0;
+  let threshold = 127;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (wB === 0) continue;
+    const wF = count - wB;
+    if (wF === 0) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const v = wB * wF * (mB - mF) * (mB - mF);
+    if (v > maxVar) {
+      maxVar = v;
+      threshold = t;
+    }
+  }
+
+  for (let i = 0; i < len; i += 4) {
+    const y = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
+    const v = y > threshold ? 255 : 0;
+    d[i] = v;
+    d[i + 1] = v;
+    d[i + 2] = v;
+  }
+  return true;
 }
 
 /**
