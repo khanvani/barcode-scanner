@@ -1,12 +1,12 @@
+import { useCallback } from 'react';
+
 /**
- * Plays a short, snappy confirmation beep using Web Audio API.
- * - 1200Hz frequency — higher pitch = feels faster/more responsive
- * - 120ms duration — short burst, not lingering
- * - Closes AudioContext after use — prevents resource leak on mobile Safari
- *   (which limits concurrent AudioContexts)
+ * Plays a short confirmation beep using Web Audio API.
+ * - 1200Hz / 120ms — short burst
+ * - Closes AudioContext after use to avoid Safari's concurrent-context limit
  */
 export function useBeep() {
-  function beep() {
+  return useCallback(() => {
     let ctx;
     try {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -24,15 +24,11 @@ export function useBeep() {
       oscillator.start(ctx.currentTime);
       oscillator.stop(ctx.currentTime + 0.12);
 
-      // Close context after sound finishes to free resources
       oscillator.onended = () => {
         ctx.close().catch(() => {});
       };
-    } catch (e) {
-      // Audio not available — fail silently
+    } catch {
       if (ctx) ctx.close().catch(() => {});
     }
-  }
-
-  return beep;
+  }, []);
 }

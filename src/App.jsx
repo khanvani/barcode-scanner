@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { useBarcodeScanner } from './useBarcodeScanner';
+import { useBarcodeScanner, useVideoOverlayBox } from './useBarcodeScanner';
 import { useBeep } from './useBeep';
 import { downloadCSV } from './csvUtils';
 import { useInstallPrompt } from './useInstallPrompt';
@@ -17,14 +17,19 @@ export default function App() {
   const [lastScan, setLastScan] = useState(null);
   const [camError, setCamError] = useState('');
   const [duplicateBarcode, setDuplicateBarcode] = useState(null);
+  const [rejectedBarcode, setRejectedBarcode] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [focusRing, setFocusRing] = useState(null);
   const { installPrompt, isInstalled, isIOS, triggerInstall } = useInstallPrompt();
   const [dismissedInstall, setDismissedInstall] = useState(false);
   const videoRef = useRef(null);
+  const focusTimerRef = useRef(null);
+  const rejectTimerRef = useRef(null);
   const beep = useBeep();
 
   const handleScan = useCallback(
     (barcode) => {
+      setRejectedBarcode(null);
       setScans((prev) => {
         if (prev.some((s) => s.barcode === barcode)) {
           setDuplicateBarcode(barcode);
@@ -40,16 +45,33 @@ export default function App() {
     [beep]
   );
 
+  const handleReject = useCallback((barcode) => {
+    setRejectedBarcode(barcode);
+    clearTimeout(rejectTimerRef.current);
+    rejectTimerRef.current = setTimeout(() => setRejectedBarcode(null), 2500);
+  }, []);
+
   const handleCamError = useCallback((msg) => {
     setCamError(msg);
   }, []);
 
-  useBarcodeScanner({
+  const {
+    torchSupported,
+    torchOn,
+    toggleTorch,
+    zoom,
+    setZoomLevel,
+    focusAt,
+  } = useBarcodeScanner({
     videoRef,
     onScan: handleScan,
+    onReject: handleReject,
     onError: handleCamError,
     active: scannerOpen,
+    paused: Boolean(duplicateBarcode),
   });
+
+  const overlayBox = useVideoOverlayBox(videoRef, scannerOpen);
 
   const openScanner = () => {
     setCamError('');
@@ -58,6 +80,23 @@ export default function App() {
 
   const closeScanner = () => {
     setScannerOpen(false);
+    setRejectedBarcode(null);
+    setFocusRing(null);
+    setDuplicateBarcode(null);
+    clearTimeout(focusTimerRef.current);
+    clearTimeout(rejectTimerRef.current);
+  };
+
+  const handleViewportTap = (e) => {
+    if (e.target.closest('button')) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    setFocusRing({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+    focusAt(e.clientX, e.clientY);
+    clearTimeout(focusTimerRef.current);
+    focusTimerRef.current = setTimeout(() => setFocusRing(null), 700);
   };
 
   const clearScans = () => {
@@ -232,21 +271,99 @@ export default function App() {
             </div>
 
             {/* Camera viewport */}
-            <div className="scanner-modal-viewport">
+            <div className="scanner-modal-viewport" onClick={handleViewportTap}>
               <video ref={videoRef} className="scanner-video" autoPlay muted playsInline />
-              <div className="scan-line" aria-hidden="true" />
-              {/* Corner guides */}
-              <div className="corner tl" aria-hidden="true" />
-              <div className="corner tr" aria-hidden="true" />
-              <div className="corner bl" aria-hidden="true" />
-              <div className="corner br" aria-hidden="true" />
+              <div
+                className="decode-band"
+                aria-hidden="true"
+                style={
+                  overlayBox
+                    ? {
+                        left: overlayBox.left,
+                        top: overlayBox.top,
+                        width: overlayBox.width,
+                        height: overlayBox.height,
+                        right: 'auto',
+                      }
+                    : undefined
+                }
+              >
+                <div className="corner tl" />
+                <div className="corner tr" />
+                <div className="corner bl" />
+                <div className="corner br" />
+              </div>
+              {focusRing && (
+                <div
+                  className="focus-ring"
+                  style={{ left: focusRing.x, top: focusRing.y }}
+                  aria-hidden="true"
+                />
+              )}
+              <div className="scanner-controls">
+                {torchSupported && (
+                  <button
+                    type="button"
+                    className={`scanner-ctrl-btn${torchOn ? ' is-on' : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleTorch();
+                    }}
+                    aria-pressed={torchOn}
+                    aria-label={torchOn ? 'Turn flashlight off' : 'Turn flashlight on'}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path
+                        d="M9 2h6l-1 5h3l-7 12 1-7H8L9 2z"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                )}
+                {zoom.supported && (
+                  <>
+                    <button
+                      type="button"
+                      className="scanner-ctrl-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setZoomLevel(zoom.value - Math.max(0.1, (zoom.max - zoom.min) / 8));
+                      }}
+                      aria-label="Zoom out"
+                      disabled={zoom.value <= zoom.min}
+                    >
+                      −
+                    </button>
+                    <button
+                      type="button"
+                      className="scanner-ctrl-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setZoomLevel(zoom.value + Math.max(0.1, (zoom.max - zoom.min) / 8));
+                      }}
+                      aria-label="Zoom in"
+                      disabled={zoom.value >= zoom.max}
+                    >
+                      +
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
 
             {camError && (
               <div className="scanner-modal-error" role="alert">{camError}</div>
             )}
 
-            <p className="scanner-modal-hint">Point camera at a barcode to scan</p>
+            {rejectedBarcode && (
+              <div className="scanner-modal-reject" role="status">
+                Read <strong>{rejectedBarcode}</strong> — not a valid format
+              </div>
+            )}
+
+            <p className="scanner-modal-hint">Place the barcode inside the red box</p>
           </div>
         </div>
       )}
