@@ -596,10 +596,9 @@ function isAcceptedBarcode(text) {
 }
 
 /**
- * Stretch low-contrast frames. Skip noise (tiny range) and frames that
- * already span most of the histogram.
+ * Otsu threshold on luma. Helps washed-out PDF / screen barcodes.
  */
-function histogramStretch(imageData) {
+function binarizeImageData(imageData) {
   const d = imageData.data;
   const len = d.length;
   const hist = new Uint32Array(256);
@@ -642,6 +641,10 @@ function histogramStretch(imageData) {
   return true;
 }
 
+/**
+ * Stretch low-contrast frames. Skip noise (tiny range) and frames that
+ * already span most of the histogram.
+ */
 function histogramStretch(imageData) {
   const d = imageData.data;
   const len = d.length;
