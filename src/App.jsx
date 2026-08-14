@@ -1,5 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { useBarcodeScanner, SCAN_BAND_TOP, SCAN_BAND_HEIGHT } from './useBarcodeScanner';
+import {
+  useBarcodeScanner,
+  SCAN_BAND_TOP,
+  SCAN_BAND_HEIGHT,
+  SCAN_BAND_LEFT,
+  SCAN_BAND_WIDTH,
+} from './useBarcodeScanner';
 import { useBeep } from './useBeep';
 import { downloadCSV } from './csvUtils';
 import { version as appVersion } from '../package.json';
@@ -427,6 +433,8 @@ export default function App() {
                 style={{
                   top: `${SCAN_BAND_TOP * 100}%`,
                   height: `${SCAN_BAND_HEIGHT * 100}%`,
+                  left: `${SCAN_BAND_LEFT * 100}%`,
+                  width: `${SCAN_BAND_WIDTH * 100}%`,
                 }}
               >
                 <div className="corner tl" />
@@ -504,7 +512,7 @@ export default function App() {
               )}
 
               {!ackBarcode && (
-                <p className="scanner-modal-hint">Fill the red box with one barcode — zoom in if scanning a PDF</p>
+                <p className="scanner-modal-hint">Hold the barcode in view — bottom of the card is fine</p>
               )}
             </div>
 
