@@ -11,20 +11,21 @@ import {
  *
  * - Native-resolution crop (cap 1920px, upscale only if the camera is tiny)
  * - No bilinear blur on the crop
- * - Overlay band matches the crop (center 40% of the video frame)
+ * - Overlay band matches the visible cover crop (center 50% of the viewfinder)
  * - Native BarcodeDetector when available, ZBar WASM fallback
  * - Histogram stretch only for genuinely low-contrast frames
  */
 
-export const SCAN_BAND_TOP = 0.3;
-export const SCAN_BAND_HEIGHT = 0.4;
+export const SCAN_BAND_TOP = 0.22;
+export const SCAN_BAND_HEIGHT = 0.5;
 
 const MAX_DECODE_WIDTH = 1920;
 const MIN_DECODE_WIDTH = 1280;
 const COOLDOWN_MS = 1500;
 const REJECT_COOLDOWN_MS = 2500;
 
-const VALID_BARCODE_RE = /^(GNED|GN|F|M|G|L)\d+$/;
+// Longer prefixes first so GNED wins over GN, AHML over AHM, and G last.
+const VALID_BARCODE_RE = /^(GNED|AHML|AHM|GN|F|M|G|L)\d+$/;
 
 const NATIVE_FORMATS = ['code_128', 'code_39'];
 
@@ -56,10 +57,12 @@ export function useBarcodeScanner({
   const [torch, setTorch] = useState({ supported: false, on: false });
   const [zoom, setZoom] = useState({ supported: false, min: 1, max: 1, value: 1 });
 
-  onScanRef.current = onScan;
-  onRejectRef.current = onReject;
-  onErrorRef.current = onError;
-  pausedRef.current = paused;
+  useEffect(() => {
+    onScanRef.current = onScan;
+    onRejectRef.current = onReject;
+    onErrorRef.current = onError;
+    pausedRef.current = paused;
+  });
 
   const stop = useCallback(() => {
     scanningRef.current = false;
@@ -311,82 +314,46 @@ export function useBarcodeScanner({
   };
 }
 
-export function getVideoContentBox(video) {
-  if (!video) return null;
+/** Visible region of an object-fit:cover video, in source pixels. */
+function getCoverVisibleRect(video) {
   const vw = video.videoWidth;
   const vh = video.videoHeight;
   const elW = video.clientWidth;
   const elH = video.clientHeight;
-  if (!vw || !vh || !elW || !elH) return null;
-
-  const videoRatio = vw / vh;
-  const elRatio = elW / elH;
-  let width;
-  let height;
-  let left;
-  let top;
-  if (elRatio > videoRatio) {
-    height = elH;
-    width = height * videoRatio;
-    left = (elW - width) / 2;
-    top = 0;
-  } else {
-    width = elW;
-    height = width / videoRatio;
-    left = 0;
-    top = (elH - height) / 2;
+  if (!vw || !vh || !elW || !elH) {
+    return {
+      ox: 0,
+      oy: 0,
+      visW: vw,
+      visH: vh,
+      vw,
+      vh,
+    };
   }
-  return { left, top, width, height };
-}
-
-export function useVideoOverlayBox(videoRef, active) {
-  const [box, setBox] = useState(null);
-
-  useEffect(() => {
-    if (!active) {
-      setBox(null);
-      return;
-    }
-    const video = videoRef.current;
-    if (!video) return;
-
-    const update = () => {
-      const content = getVideoContentBox(video);
-      if (!content) return;
-      setBox({
-        left: content.left,
-        top: content.top + content.height * SCAN_BAND_TOP,
-        width: content.width,
-        height: content.height * SCAN_BAND_HEIGHT,
-      });
-    };
-
-    video.addEventListener('loadedmetadata', update);
-    video.addEventListener('playing', update);
-    const ro = new ResizeObserver(update);
-    ro.observe(video);
-    update();
-
-    return () => {
-      video.removeEventListener('loadedmetadata', update);
-      video.removeEventListener('playing', update);
-      ro.disconnect();
-    };
-  }, [videoRef, active]);
-
-  return box;
+  const scale = Math.max(elW / vw, elH / vh);
+  const visW = elW / scale;
+  const visH = elH / scale;
+  return {
+    ox: (vw - visW) / 2,
+    oy: (vh - visH) / 2,
+    visW,
+    visH,
+    vw,
+    vh,
+  };
 }
 
 function clientToVideoPoint(video, clientX, clientY) {
   const rect = video.getBoundingClientRect();
-  const content = getVideoContentBox(video);
-  if (!content) return null;
-  const x = clientX - rect.left - content.left;
-  const y = clientY - rect.top - content.top;
-  if (x < 0 || y < 0 || x > content.width || y > content.height) return null;
+  if (!rect.width || !rect.height) return null;
+  const x = (clientX - rect.left) / rect.width;
+  const y = (clientY - rect.top) / rect.height;
+  if (x < 0 || y < 0 || x > 1 || y > 1) return null;
+  const { ox, oy, visW, visH, vw, vh } = getCoverVisibleRect(video);
+  if (!vw || !vh) return { x, y };
   return {
-    x: x / content.width,
-    y: y / content.height,
+    x: (ox + x * visW) / vw,
+    y: (oy + y * visH) / vh,
   };
 }
 
@@ -420,18 +387,22 @@ function createNativeDetector() {
 }
 
 async function decodeFrame(video, canvas, ctx, vw, vh, scanner, detector) {
-  const bandH = Math.round(vh * SCAN_BAND_HEIGHT);
-  const sy = Math.round((vh - bandH) / 2);
+  const { ox, oy, visW, visH } = getCoverVisibleRect(video);
+  const sx = ox;
+  const sy = oy + visH * SCAN_BAND_TOP;
+  const sw = visW || vw;
+  const sh = (visH || vh) * SCAN_BAND_HEIGHT;
 
-  let dstW = vw;
-  let dstH = bandH;
-  if (vw > MAX_DECODE_WIDTH) {
+  let dstW = Math.round(sw);
+  let dstH = Math.round(sh);
+  if (dstW > MAX_DECODE_WIDTH) {
+    dstH = Math.round(dstH * (MAX_DECODE_WIDTH / dstW));
     dstW = MAX_DECODE_WIDTH;
-    dstH = Math.round(bandH * (dstW / vw));
-  } else if (vw < MIN_DECODE_WIDTH) {
+  } else if (dstW > 0 && dstW < MIN_DECODE_WIDTH) {
+    dstH = Math.round(dstH * (MIN_DECODE_WIDTH / dstW));
     dstW = MIN_DECODE_WIDTH;
-    dstH = Math.round(bandH * (dstW / vw));
   }
+  if (dstW < 1 || dstH < 1) return [];
 
   if (canvas.width !== dstW || canvas.height !== dstH) {
     canvas.width = dstW;
@@ -442,7 +413,7 @@ async function decodeFrame(video, canvas, ctx, vw, vh, scanner, detector) {
     }
   }
 
-  ctx.drawImage(video, 0, sy, vw, bandH, 0, 0, dstW, dstH);
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, dstW, dstH);
   const imageData = ctx.getImageData(0, 0, dstW, dstH);
   if (histogramStretch(imageData)) {
     ctx.putImageData(imageData, 0, 0);
@@ -514,12 +485,12 @@ function handleDecodedTexts(texts, refs) {
 
 function normalizeBarcode(text) {
   if (!text) return '';
-  return String(text)
-    .trim()
-    .replace(/[\u001d\u001e\u001f]/g, '')
-    .replace(/^\]C1/i, '')
-    .replace(/\s+/g, '')
-    .toUpperCase();
+  let out = '';
+  const raw = String(text).trim();
+  for (let i = 0; i < raw.length; i++) {
+    if (raw.charCodeAt(i) >= 32) out += raw[i];
+  }
+  return out.replace(/^\]C1/i, '').replace(/\s+/g, '').toUpperCase();
 }
 
 /**

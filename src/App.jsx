@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { useBarcodeScanner, useVideoOverlayBox } from './useBarcodeScanner';
+import { useBarcodeScanner, SCAN_BAND_TOP, SCAN_BAND_HEIGHT } from './useBarcodeScanner';
 import { useBeep } from './useBeep';
 import { downloadCSV } from './csvUtils';
 import { useInstallPrompt } from './useInstallPrompt';
@@ -70,8 +70,6 @@ export default function App() {
     active: scannerOpen,
     paused: Boolean(duplicateBarcode),
   });
-
-  const overlayBox = useVideoOverlayBox(videoRef, scannerOpen);
 
   const openScanner = () => {
     setCamError('');
@@ -276,17 +274,10 @@ export default function App() {
               <div
                 className="decode-band"
                 aria-hidden="true"
-                style={
-                  overlayBox
-                    ? {
-                        left: overlayBox.left,
-                        top: overlayBox.top,
-                        width: overlayBox.width,
-                        height: overlayBox.height,
-                        right: 'auto',
-                      }
-                    : undefined
-                }
+                style={{
+                  top: `${SCAN_BAND_TOP * 100}%`,
+                  height: `${SCAN_BAND_HEIGHT * 100}%`,
+                }}
               >
                 <div className="corner tl" />
                 <div className="corner tr" />
@@ -351,19 +342,19 @@ export default function App() {
                   </>
                 )}
               </div>
+
+              {camError && (
+                <div className="scanner-modal-error" role="alert">{camError}</div>
+              )}
+
+              {rejectedBarcode && (
+                <div className="scanner-modal-reject" role="status">
+                  Read <strong>{rejectedBarcode}</strong> — not a valid format
+                </div>
+              )}
+
+              <p className="scanner-modal-hint">Place the barcode inside the red box</p>
             </div>
-
-            {camError && (
-              <div className="scanner-modal-error" role="alert">{camError}</div>
-            )}
-
-            {rejectedBarcode && (
-              <div className="scanner-modal-reject" role="status">
-                Read <strong>{rejectedBarcode}</strong> — not a valid format
-              </div>
-            )}
-
-            <p className="scanner-modal-hint">Place the barcode inside the red box</p>
           </div>
         </div>
       )}

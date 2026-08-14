@@ -397,46 +397,38 @@ td { padding: 9px 12px; vertical-align: middle; }
 .scanner-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.6);
-  backdrop-filter: blur(4px);
+  background: #000;
   display: flex;
-  align-items: flex-end;
+  align-items: stretch;
   justify-content: center;
   z-index: 150;
   animation: fadeIn 0.15s ease;
 }
 
-@media (min-width: 500px) {
-  .scanner-modal-overlay {
-    align-items: center;
-  }
-}
-
 .scanner-modal {
-  background: var(--bg-primary);
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: #000;
   width: 100%;
-  max-width: 480px;
+  height: 100%;
+  max-height: 100dvh;
   overflow: hidden;
-  animation: slideUp 0.25s ease;
   display: flex;
   flex-direction: column;
-}
-
-@media (min-width: 500px) {
-  .scanner-modal {
-    border-radius: var(--radius-xl);
-  }
+  position: relative;
 }
 
 /* Top bar inside scanner modal */
 .scanner-modal-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 12px;
   background: var(--primary);
   gap: 12px;
+  z-index: 4;
 }
 
 .scanner-modal-meta {
@@ -510,10 +502,10 @@ td { padding: 9px 12px; vertical-align: middle; }
 /* Camera viewport inside modal */
 .scanner-modal-viewport {
   position: relative;
+  flex: 1;
   width: 100%;
-  aspect-ratio: 4 / 3;
-  max-height: 55svh;
-  background: #111827;
+  min-height: 0;
+  background: #000;
   overflow: hidden;
   cursor: pointer;
 }
@@ -521,20 +513,18 @@ td { padding: 9px 12px; vertical-align: middle; }
 .scanner-video {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   display: block;
 }
 
-/* Decode band — matches the center 40% crop the decoder uses */
+/* Decode band — matches the visible cover crop the decoder uses */
 .decode-band {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: 30%;
-  height: 40%;
-  border: 2px solid var(--primary);
-  border-radius: 6px;
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4);
+  left: 8%;
+  width: 84%;
+  border: 2px solid #fff;
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
   pointer-events: none;
   z-index: 1;
 }
@@ -567,22 +557,22 @@ td { padding: 9px 12px; vertical-align: middle; }
 
 .scanner-controls {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
+  right: 12px;
+  bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   z-index: 3;
 }
 
 .scanner-ctrl-btn {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border: none;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 600;
   line-height: 1;
   display: flex;
@@ -611,30 +601,48 @@ td { padding: 9px 12px; vertical-align: middle; }
 }
 
 .scanner-modal-error {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: calc(64px + env(safe-area-inset-top, 0px));
   font-size: 13px;
-  color: var(--primary);
-  background: var(--error-light);
-  border-top: 1px solid rgba(139,0,0,0.15);
-  padding: 10px 16px;
+  color: #fff;
+  background: rgba(139, 0, 0, 0.92);
+  border-radius: 8px;
+  padding: 10px 14px;
   line-height: 1.4;
+  z-index: 3;
 }
 
 .scanner-modal-hint {
+  position: absolute;
+  left: 16px;
+  right: 64px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   font-size: 13px;
-  color: var(--text-tertiary);
+  color: #fff;
   text-align: center;
-  padding: 12px 16px;
   margin: 0;
+  padding: 0;
+  z-index: 3;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
 .scanner-modal-reject {
+  position: absolute;
+  left: 12px;
+  right: 64px;
+  bottom: calc(44px + env(safe-area-inset-bottom, 0px));
   font-size: 13px;
-  color: #92400e;
+  color: #78350f;
   background: #fef3c7;
-  border-top: 1px solid #f59e0b;
-  padding: 10px 16px;
+  border-radius: 8px;
+  padding: 10px 14px;
   line-height: 1.4;
   word-break: break-all;
+  z-index: 3;
+  text-align: center;
 }
 
 /* ── Duplicate Scan Modal ── */
