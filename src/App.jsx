@@ -1,31 +1,65 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useBarcodeScanner, SCAN_BAND_TOP, SCAN_BAND_HEIGHT } from './useBarcodeScanner';
 import { useBeep } from './useBeep';
 import { downloadCSV } from './csvUtils';
 import { useInstallPrompt } from './useInstallPrompt';
+import { nowISO, formatISTParts, scanTimeValue } from './timeUtils';
 import './App.css';
+
+const STORAGE_KEY = 'barcode-scans';
+const BACKUP_KEY = 'barcode-scans-backup';
+
+function readScans() {
+  for (const key of [STORAGE_KEY, BACKUP_KEY]) {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+      if (Array.isArray(parsed) && parsed.length) return parsed;
+    } catch {
+      /* try the next key */
+    }
+  }
+  return [];
+}
+
+function persistScans(next) {
+  const json = JSON.stringify(next);
+  localStorage.setItem(STORAGE_KEY, json);
+  localStorage.setItem(BACKUP_KEY, json);
+}
 
 export default function App() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scans, setScans] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('barcode-scans') || '[]');
-    } catch {
-      return [];
-    }
+    const loaded = readScans();
+    if (loaded.length) persistScans(loaded);
+    return loaded;
   });
   const [lastScan, setLastScan] = useState(null);
   const [camError, setCamError] = useState('');
   const [duplicateBarcode, setDuplicateBarcode] = useState(null);
+  const [pendingBarcode, setPendingBarcode] = useState(null);
   const [rejectedBarcode, setRejectedBarcode] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [focusRing, setFocusRing] = useState(null);
   const { installPrompt, isInstalled, isIOS, triggerInstall } = useInstallPrompt();
   const [dismissedInstall, setDismissedInstall] = useState(false);
   const videoRef = useRef(null);
+  const menuRef = useRef(null);
   const focusTimerRef = useRef(null);
   const rejectTimerRef = useRef(null);
   const beep = useBeep();
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointer = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointer);
+    return () => document.removeEventListener('pointerdown', onPointer);
+  }, [menuOpen]);
 
   const handleScan = useCallback(
     (barcode) => {
@@ -36,10 +70,8 @@ export default function App() {
           return prev;
         }
         beep();
-        setLastScan(barcode);
-        const next = [{ barcode, timestamp: new Date().toLocaleString() }, ...prev];
-        localStorage.setItem('barcode-scans', JSON.stringify(next));
-        return next;
+        setPendingBarcode(barcode);
+        return prev;
       });
     },
     [beep]
@@ -68,7 +100,7 @@ export default function App() {
     onReject: handleReject,
     onError: handleCamError,
     active: scannerOpen,
-    paused: Boolean(duplicateBarcode),
+    paused: Boolean(duplicateBarcode) || Boolean(pendingBarcode),
   });
 
   const openScanner = () => {
@@ -79,10 +111,32 @@ export default function App() {
   const closeScanner = () => {
     setScannerOpen(false);
     setRejectedBarcode(null);
+    setPendingBarcode(null);
     setFocusRing(null);
     setDuplicateBarcode(null);
     clearTimeout(focusTimerRef.current);
     clearTimeout(rejectTimerRef.current);
+  };
+
+  const confirmPending = () => {
+    if (!pendingBarcode) return;
+    const barcode = pendingBarcode;
+    setScans((prev) => {
+      if (prev.some((s) => s.barcode === barcode)) {
+        setDuplicateBarcode(barcode);
+        setPendingBarcode(null);
+        return prev;
+      }
+      setLastScan(barcode);
+      const next = [{ barcode, scannedAt: nowISO() }, ...prev];
+      persistScans(next);
+      return next;
+    });
+    setPendingBarcode(null);
+  };
+
+  const cancelPending = () => {
+    setPendingBarcode(null);
   };
 
   const handleViewportTap = (e) => {
@@ -100,8 +154,10 @@ export default function App() {
   const clearScans = () => {
     setScans([]);
     setLastScan(null);
-    localStorage.removeItem('barcode-scans');
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(BACKUP_KEY);
     setConfirmClear(false);
+    setMenuOpen(false);
   };
 
   return (
@@ -119,6 +175,58 @@ export default function App() {
         <div style={{ flex: 1 }}>
           <h1>Barcode Scanner</h1>
           <div className="header-brand">Scan. Track. Export.</div>
+        </div>
+        <div className="header-menu" ref={menuRef}>
+          <button
+            type="button"
+            className="btn-header-cog"
+            aria-label="Settings"
+            aria-haspopup="true"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+              />
+              <path
+                d="M19.4 13a7.8 7.8 0 0 0 .1-2l2-1.5-2-3.5-2.4.5a8 8 0 0 0-1.7-1L15 3h-6l-.4 2.5a8 8 0 0 0-1.7 1L6.5 6 4.5 9.5 6.5 11a7.8 7.8 0 0 0 0 2l-2 1.5 2 3.5 2.4-.5a8 8 0 0 0 1.7 1L9 21h6l.4-2.5a8 8 0 0 0 1.7-1l2.4.5 2-3.5-2-1.5Z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          {menuOpen && (
+            <div className="header-menu-dropdown" role="menu">
+              <button
+                type="button"
+                className="header-menu-item"
+                role="menuitem"
+                disabled={scans.length === 0}
+                onClick={() => {
+                  downloadCSV(scans);
+                  setMenuOpen(false);
+                }}
+              >
+                Export CSV
+              </button>
+              <button
+                type="button"
+                className="header-menu-item header-menu-item-danger"
+                role="menuitem"
+                disabled={scans.length === 0}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setConfirmClear(true);
+                }}
+              >
+                Clear all scans…
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -197,14 +305,9 @@ export default function App() {
               {scans.length > 0 && <span className="badge">{scans.length}</span>}
             </h2>
             {scans.length > 0 && (
-              <div className="results-actions">
-                <button className="btn-export" onClick={() => downloadCSV(scans)}>
-                  Export
-                </button>
-                <button className="btn-clear" onClick={() => setConfirmClear(true)}>
-                  Clear
-                </button>
-              </div>
+              <button className="btn-export" onClick={() => downloadCSV(scans)}>
+                Export
+              </button>
             )}
           </div>
 
@@ -215,19 +318,25 @@ export default function App() {
               <table>
                 <thead>
                   <tr>
-                    <th>#</th>
+                    <th className="col-num">#</th>
                     <th>Barcode</th>
-                    <th>Time</th>
+                    <th>Scanned At</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {scans.map((s, i) => (
-                    <tr key={i} className={i === 0 ? 'row-new' : ''}>
-                      <td className="num-cell">{scans.length - i}</td>
-                      <td className="barcode-cell">{s.barcode}</td>
-                      <td className="ts-cell">{s.timestamp}</td>
-                    </tr>
-                  ))}
+                  {scans.map((s, i) => {
+                    const parts = formatISTParts(scanTimeValue(s));
+                    return (
+                      <tr key={`${s.barcode}-${s.scannedAt || s.timestamp || i}`} className={i === 0 ? 'row-new' : ''}>
+                        <td className="num-cell">{scans.length - i}</td>
+                        <td className="barcode-cell">{s.barcode}</td>
+                        <td className="ts-cell">
+                          <span className="ts-date">{parts.date}</span>
+                          {parts.time ? <span className="ts-time">{parts.time}</span> : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -347,14 +456,30 @@ export default function App() {
                 <div className="scanner-modal-error" role="alert">{camError}</div>
               )}
 
-              {rejectedBarcode && (
+              {rejectedBarcode && !pendingBarcode && (
                 <div className="scanner-modal-reject" role="status">
                   Read <strong>{rejectedBarcode}</strong> — not a valid format
                 </div>
               )}
 
-              <p className="scanner-modal-hint">Place the barcode inside the red box</p>
+              {!pendingBarcode && (
+                <p className="scanner-modal-hint">Place the barcode inside the red box</p>
+              )}
             </div>
+
+            {pendingBarcode && (
+              <div className="scanner-confirm-bar">
+                <div className="scanner-confirm-value" aria-live="polite">{pendingBarcode}</div>
+                <div className="scanner-confirm-actions">
+                  <button type="button" className="btn-scan-cancel" onClick={cancelPending}>
+                    Cancel
+                  </button>
+                  <button type="button" className="btn-scan-confirm" onClick={confirmPending} autoFocus>
+                    Confirm
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -372,14 +497,24 @@ export default function App() {
               <h3 id="clear-title">Clear All Scans?</h3>
             </div>
             <div className="modal-body">
-              <p>This will permanently delete all <strong>{scans.length}</strong> scanned record{scans.length !== 1 ? 's' : ''}. This action cannot be undone.</p>
+              <p>This will permanently delete all <strong>{scans.length}</strong> scanned record{scans.length !== 1 ? 's' : ''} from this device.</p>
+              <p className="modal-warn">Export a CSV copy first. This cannot be undone.</p>
             </div>
-            <div className="modal-footer modal-footer-split">
-              <button className="btn-modal-cancel" onClick={() => setConfirmClear(false)}>
-                Cancel
-              </button>
-              <button className="btn-modal-danger" onClick={clearScans} autoFocus>
-                Yes, Clear All
+            <div className="modal-footer modal-footer-clear">
+              <div className="modal-footer-split">
+                <button className="btn-modal-cancel" onClick={() => setConfirmClear(false)} autoFocus>
+                  Cancel
+                </button>
+                <button
+                  className="btn-modal-secondary"
+                  onClick={() => downloadCSV(scans)}
+                  disabled={scans.length === 0}
+                >
+                  Export
+                </button>
+              </div>
+              <button className="btn-modal-danger" onClick={clearScans}>
+                Clear All
               </button>
             </div>
           </div>

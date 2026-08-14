@@ -1,10 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  scanImageData,
-  ZBarScanner,
-  ZBarSymbolType,
-  ZBarConfigType,
-} from '@undecaf/zbar-wasm';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { scanImageData, ZBarScanner, ZBarSymbolType, ZBarConfigType } from "@undecaf/zbar-wasm";
 
 /**
  * 1D barcode scanner (Code128 / Code39).
@@ -24,27 +19,20 @@ const MIN_DECODE_WIDTH = 1280;
 const COOLDOWN_MS = 1500;
 const REJECT_COOLDOWN_MS = 2500;
 
-// Longer prefixes first so GNED wins over GN, AHML over AHM, and G last.
-const VALID_BARCODE_RE = /^(GNED|AHML|AHM|GN|F|M|G|L)\d+$/;
+// Longer prefixes first so GNED wins over GN over AHM, and G last.
+const VALID_BARCODE_RE = /^(GNED|AHM|GN|F|M|G|L)\d+$/;
 
-const NATIVE_FORMATS = ['code_128', 'code_39'];
+const NATIVE_FORMATS = ["code_128", "code_39"];
 
-export function useBarcodeScanner({
-  videoRef,
-  onScan,
-  onReject,
-  onError,
-  active,
-  paused = false,
-}) {
+export function useBarcodeScanner({ videoRef, onScan, onReject, onError, active, paused = false }) {
   const rafRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const trackRef = useRef(null);
   const scannerRef = useRef(null);
   const detectorRef = useRef(null);
-  const lastScannedRef = useRef('');
-  const lastRejectedRef = useRef('');
+  const lastScannedRef = useRef("");
+  const lastRejectedRef = useRef("");
   const cooldownRef = useRef(null);
   const rejectCooldownRef = useRef(null);
   const scanningRef = useRef(false);
@@ -129,31 +117,34 @@ export function useBarcodeScanner({
     }
   }, []);
 
-  const focusAt = useCallback(async (clientX, clientY) => {
-    const track = trackRef.current;
-    const video = videoRef.current;
-    if (!track || !video) return;
-    const point = clientToVideoPoint(video, clientX, clientY);
-    if (!point) return;
-    const caps = track.getCapabilities?.() || {};
-    if (!caps.pointsOfInterest && !caps.focusMode) return;
+  const focusAt = useCallback(
+    async (clientX, clientY) => {
+      const track = trackRef.current;
+      const video = videoRef.current;
+      if (!track || !video) return;
+      const point = clientToVideoPoint(video, clientX, clientY);
+      if (!point) return;
+      const caps = track.getCapabilities?.() || {};
+      if (!caps.pointsOfInterest && !caps.focusMode) return;
 
-    const advanced = {};
-    if (caps.pointsOfInterest) {
-      advanced.pointsOfInterest = [{ x: point.x, y: point.y }];
-    }
-    if (caps.focusMode?.includes('single-shot')) {
-      advanced.focusMode = 'single-shot';
-    } else if (caps.focusMode?.includes('manual')) {
-      advanced.focusMode = 'manual';
-    }
-    if (Object.keys(advanced).length === 0) return;
-    try {
-      await track.applyConstraints({ advanced: [advanced] });
-    } catch {
-      /* tap-to-focus not supported on this device */
-    }
-  }, [videoRef]);
+      const advanced = {};
+      if (caps.pointsOfInterest) {
+        advanced.pointsOfInterest = [{ x: point.x, y: point.y }];
+      }
+      if (caps.focusMode?.includes("single-shot")) {
+        advanced.focusMode = "single-shot";
+      } else if (caps.focusMode?.includes("manual")) {
+        advanced.focusMode = "manual";
+      }
+      if (Object.keys(advanced).length === 0) return;
+      try {
+        await track.applyConstraints({ advanced: [advanced] });
+      } catch {
+        /* tap-to-focus not supported on this device */
+      }
+    },
+    [videoRef],
+  );
 
   useEffect(() => {
     if (!active) return;
@@ -163,13 +154,13 @@ export function useBarcodeScanner({
     if (!video) return;
 
     if (!canvasRef.current) {
-      canvasRef.current = document.createElement('canvas');
+      canvasRef.current = document.createElement("canvas");
     }
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
     ctx.imageSmoothingEnabled = false;
-    if ('webkitImageSmoothingEnabled' in ctx) {
+    if ("webkitImageSmoothingEnabled" in ctx) {
       ctx.webkitImageSmoothingEnabled = false;
     }
 
@@ -178,7 +169,7 @@ export function useBarcodeScanner({
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
-            facingMode: { ideal: 'environment' },
+            facingMode: { ideal: "environment" },
             width: { ideal: 1920 },
             height: { ideal: 1080 },
           },
@@ -198,8 +189,8 @@ export function useBarcodeScanner({
 
         try {
           const caps = track.getCapabilities?.() || {};
-          if (caps.focusMode?.includes('continuous')) {
-            await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
+          if (caps.focusMode?.includes("continuous")) {
+            await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
           }
           setTorch({ supported: Boolean(caps.torch), on: false });
           if (caps.zoom && caps.zoom.max > caps.zoom.min) {
@@ -230,8 +221,8 @@ export function useBarcodeScanner({
         }
 
         scanningRef.current = true;
-        lastScannedRef.current = '';
-        lastRejectedRef.current = '';
+        lastScannedRef.current = "";
+        lastRejectedRef.current = "";
 
         createZBarScanner()
           .then((scanner) => {
@@ -243,7 +234,7 @@ export function useBarcodeScanner({
           })
           .catch(() => {
             if (!detectorRef.current && !cancelled) {
-              onErrorRef.current?.('Barcode engine failed to load.');
+              onErrorRef.current?.("Barcode engine failed to load.");
             }
           });
 
@@ -285,12 +276,12 @@ export function useBarcodeScanner({
           stream?.getTracks().forEach((t) => t.stop());
           return;
         }
-        if (err?.name === 'NotAllowedError') {
-          onErrorRef.current?.('Camera permission denied. Please allow camera access.');
-        } else if (err?.name === 'NotFoundError') {
-          onErrorRef.current?.('No camera found on this device.');
+        if (err?.name === "NotAllowedError") {
+          onErrorRef.current?.("Camera permission denied. Please allow camera access.");
+        } else if (err?.name === "NotFoundError") {
+          onErrorRef.current?.("No camera found on this device.");
         } else {
-          onErrorRef.current?.(err?.message || 'Camera error');
+          onErrorRef.current?.(err?.message || "Camera error");
         }
       }
     };
@@ -374,7 +365,7 @@ async function createZBarScanner() {
 
 function createNativeDetector() {
   const Detector = globalThis.BarcodeDetector;
-  if (typeof Detector === 'undefined') return null;
+  if (typeof Detector === "undefined") return null;
   try {
     return new Detector({ formats: NATIVE_FORMATS });
   } catch {
@@ -408,7 +399,7 @@ async function decodeFrame(video, canvas, ctx, vw, vh, scanner, detector) {
     canvas.width = dstW;
     canvas.height = dstH;
     ctx.imageSmoothingEnabled = false;
-    if ('webkitImageSmoothingEnabled' in ctx) {
+    if ("webkitImageSmoothingEnabled" in ctx) {
       ctx.webkitImageSmoothingEnabled = false;
     }
   }
@@ -457,40 +448,36 @@ function handleDecodedTexts(texts, refs) {
   }
   if (!normalized.length) return;
 
-  const valid = normalized.find(
-    (t) => VALID_BARCODE_RE.test(t) && t !== refs.lastScannedRef.current
-  );
+  const valid = normalized.find((t) => VALID_BARCODE_RE.test(t) && t !== refs.lastScannedRef.current);
   if (valid) {
     clearTimeout(refs.cooldownRef.current);
     refs.lastScannedRef.current = valid;
     refs.cooldownRef.current = setTimeout(() => {
-      refs.lastScannedRef.current = '';
+      refs.lastScannedRef.current = "";
     }, COOLDOWN_MS);
     refs.onScanRef.current?.(valid);
     return;
   }
 
-  const rejected = normalized.find(
-    (t) => !VALID_BARCODE_RE.test(t) && t !== refs.lastRejectedRef.current
-  );
+  const rejected = normalized.find((t) => !VALID_BARCODE_RE.test(t) && t !== refs.lastRejectedRef.current);
   if (rejected) {
     clearTimeout(refs.rejectCooldownRef.current);
     refs.lastRejectedRef.current = rejected;
     refs.rejectCooldownRef.current = setTimeout(() => {
-      refs.lastRejectedRef.current = '';
+      refs.lastRejectedRef.current = "";
     }, REJECT_COOLDOWN_MS);
     refs.onRejectRef.current?.(rejected);
   }
 }
 
 function normalizeBarcode(text) {
-  if (!text) return '';
-  let out = '';
+  if (!text) return "";
+  let out = "";
   const raw = String(text).trim();
   for (let i = 0; i < raw.length; i++) {
     if (raw.charCodeAt(i) >= 32) out += raw[i];
   }
-  return out.replace(/^\]C1/i, '').replace(/\s+/g, '').toUpperCase();
+  return out.replace(/^\]C1/i, "").replace(/\s+/g, "").toUpperCase();
 }
 
 /**

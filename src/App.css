@@ -82,6 +82,81 @@
   text-transform: uppercase;
 }
 
+.header-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.btn-header-cog {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.12);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.btn-header-cog svg {
+  width: 20px;
+  height: 20px;
+}
+
+.btn-header-cog:hover,
+.btn-header-cog[aria-expanded="true"] {
+  background: rgba(255,255,255,0.22);
+}
+
+.header-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  background: #fff;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  z-index: 120;
+}
+
+.header-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border: none;
+  background: #fff;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.header-menu-item + .header-menu-item {
+  border-top: 1px solid var(--border-light);
+}
+
+.header-menu-item:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+.header-menu-item:not(:disabled):hover {
+  background: var(--bg-secondary);
+}
+
+.header-menu-item-danger {
+  color: var(--primary);
+}
+
+.header-menu-item-danger:not(:disabled):hover {
+  background: var(--error-light);
+}
+
 /* ── Install Prompt (bottom sheet) ── */
 .install-overlay {
   position: fixed;
@@ -291,7 +366,6 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 14px;
-  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -315,31 +389,21 @@
   line-height: 1.6;
 }
 
-.results-actions {
-  display: flex;
-  width: 100%;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.btn-export,
-.btn-clear {
+.btn-export {
   padding: 7px 14px;
   border-radius: var(--radius-md);
   border: none;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: all var(--transition-fast);
   min-height: 36px;
   touch-action: manipulation;
+  background: var(--success);
+  color: white;
+  flex-shrink: 0;
 }
 
-.btn-export { background: var(--success); color: white; }
-.btn-export:hover { background: #059669; box-shadow: var(--shadow-sm); }
-
-.btn-clear { background: var(--bg-primary); color: var(--text-secondary); border: 1px solid var(--border-dark); }
-.btn-clear:hover { background: var(--bg-tertiary); }
+.btn-export:hover { background: #059669; }
 
 /* ── Table ── */
 .empty-msg {
@@ -369,29 +433,54 @@ thead th {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding: 9px 12px;
+  padding: 11px 12px;
   text-align: left;
   white-space: nowrap;
-  border-bottom: 2px solid rgba(0,0,0,0.1);
 }
 
-tbody tr { border-top: 1px solid var(--border-light); transition: background var(--transition-fast); }
-tbody tr:hover { background: var(--bg-secondary); }
+th.col-num { width: 40px; }
+
+tbody tr { border-top: 1px solid var(--border-light); }
+tbody tr:nth-child(even) { background: var(--bg-secondary); }
 tbody tr.row-new { animation: highlight 1.2s ease; }
 
-td { padding: 9px 12px; vertical-align: middle; }
+td { padding: 12px; vertical-align: top; }
 
-.num-cell { color: var(--text-tertiary); font-size: 12px; width: 32px; }
+.num-cell {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  width: 40px;
+  padding-top: 14px;
+}
 
 .barcode-cell {
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--primary);
   word-break: break-all;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.ts-cell {
+  white-space: nowrap;
+  min-width: 118px;
+}
+
+.ts-date {
+  display: block;
+  color: var(--text-primary);
+  font-size: 12px;
   font-weight: 600;
 }
 
-.ts-cell { color: var(--text-tertiary); font-size: 11px; white-space: nowrap; }
+.ts-time {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 11px;
+  margin-top: 2px;
+}
 
 /* ── Scanner Modal ── */
 .scanner-modal-overlay {
@@ -645,6 +734,59 @@ td { padding: 9px 12px; vertical-align: middle; }
   text-align: center;
 }
 
+.scanner-confirm-bar {
+  flex-shrink: 0;
+  background: #fff;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+}
+
+.scanner-confirm-value {
+  font-family: ui-monospace, monospace;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--primary);
+  text-align: center;
+  word-break: break-all;
+  margin-bottom: 12px;
+}
+
+.scanner-confirm-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-scan-cancel,
+.btn-scan-confirm {
+  flex: 1;
+  min-height: 48px;
+  border-radius: var(--radius-md);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.btn-scan-cancel {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-dark);
+}
+
+.btn-scan-cancel:active {
+  transform: scale(0.98);
+}
+
+.btn-scan-confirm {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+}
+
+.btn-scan-confirm:active {
+  transform: scale(0.98);
+}
+
 /* ── Duplicate Scan Modal ── */
 .modal-overlay {
   position: fixed;
@@ -706,6 +848,45 @@ td { padding: 9px 12px; vertical-align: middle; }
   line-height: 1.5;
 }
 
+.modal-warn {
+  color: #92400e !important;
+  background: #fef3c7;
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  font-weight: 500;
+}
+
+.modal-footer { padding: 0 20px 20px; }
+
+.modal-footer-split {
+  display: flex;
+  gap: 10px;
+}
+
+.modal-footer-clear {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn-modal-secondary {
+  flex: 1;
+  padding: 11px;
+  background: var(--success);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.btn-modal-secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .modal-barcode {
   font-family: ui-monospace, monospace;
   font-size: 13px;
@@ -716,13 +897,6 @@ td { padding: 9px 12px; vertical-align: middle; }
   border-radius: var(--radius-md);
   padding: 8px 12px;
   word-break: break-all;
-}
-
-.modal-footer { padding: 0 20px 20px; }
-
-.modal-footer-split {
-  display: flex;
-  gap: 10px;
 }
 
 .btn-modal-ok {
