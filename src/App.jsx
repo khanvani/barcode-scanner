@@ -521,7 +521,7 @@ export default function App() {
               )}
 
               {!pendingBarcode && (
-                <p className="scanner-modal-hint">Place the barcode inside the red box</p>
+                <p className="scanner-modal-hint">Fill the red box with one barcode — zoom in if scanning a PDF</p>
               )}
             </div>
 

@@ -358,8 +358,9 @@ async function createZBarScanner() {
   scanner.setConfig(ZBarSymbolType.ZBAR_CODE128, ZBarConfigType.ZBAR_CFG_ENABLE, 1);
   scanner.setConfig(ZBarSymbolType.ZBAR_CODE39, ZBarConfigType.ZBAR_CFG_ENABLE, 1);
   scanner.setConfig(ZBarSymbolType.ZBAR_CODE128, ZBarConfigType.ZBAR_CFG_ASCII, 1);
+  scanner.setConfig(ZBarSymbolType.ZBAR_CODE39, ZBarConfigType.ZBAR_CFG_ASCII, 1);
   scanner.setConfig(ZBarSymbolType.ZBAR_CODE128, ZBarConfigType.ZBAR_CFG_MIN_LEN, 2);
-  scanner.setConfig(ZBarSymbolType.ZBAR_CODE39, ZBarConfigType.ZBAR_CFG_MIN_LEN, 2);
+  scanner.setConfig(ZBarSymbolType.ZBAR_CODE39, ZBarConfigType.ZBAR_CFG_MIN_LEN, 4);
   scanner.setConfig(ZBarSymbolType.ZBAR_NONE, ZBarConfigType.ZBAR_CFG_Y_DENSITY, 1);
   scanner.setConfig(ZBarSymbolType.ZBAR_NONE, ZBarConfigType.ZBAR_CFG_X_DENSITY, 1);
   scanner.setConfig(ZBarSymbolType.ZBAR_NONE, ZBarConfigType.ZBAR_CFG_TEST_INVERTED, 1);
@@ -382,18 +383,34 @@ function createNativeDetector() {
 }
 
 async function decodeFrame(video, canvas, ctx, vw, vh, scanner, detector) {
-  const { ox, oy, visW, visH } = getCoverVisibleRect(video);
-  const sx = ox;
-  const sy = oy + visH * SCAN_BAND_TOP;
-  const sw = visW || vw;
-  const sh = (visH || vh) * SCAN_BAND_HEIGHT;
+  const vis = getCoverVisibleRect(video);
+  const attempts = [
+    { top: SCAN_BAND_TOP, height: SCAN_BAND_HEIGHT, scale: 1, smooth: false },
+    { top: SCAN_BAND_TOP, height: SCAN_BAND_HEIGHT, scale: 2, smooth: true },
+    { top: 0.36, height: 0.28, scale: 2, smooth: true },
+  ];
 
-  let dstW = Math.round(sw);
-  let dstH = Math.round(sh);
+  for (const attempt of attempts) {
+    const texts = await decodeCrop(video, canvas, ctx, vis, vw, vh, attempt, scanner, detector);
+    if (texts.length) return texts;
+  }
+  return [];
+}
+
+async function decodeCrop(video, canvas, ctx, vis, vw, vh, attempt, scanner, detector) {
+  const visW = vis.visW || vw;
+  const visH = vis.visH || vh;
+  const sx = vis.ox;
+  const sy = vis.oy + visH * attempt.top;
+  const sw = visW;
+  const sh = visH * attempt.height;
+
+  let dstW = Math.round(sw * attempt.scale);
+  let dstH = Math.round(sh * attempt.scale);
   if (dstW > MAX_DECODE_WIDTH) {
     dstH = Math.round(dstH * (MAX_DECODE_WIDTH / dstW));
     dstW = MAX_DECODE_WIDTH;
-  } else if (dstW > 0 && dstW < MIN_DECODE_WIDTH) {
+  } else if (attempt.scale === 1 && dstW > 0 && dstW < MIN_DECODE_WIDTH) {
     dstH = Math.round(dstH * (MIN_DECODE_WIDTH / dstW));
     dstW = MIN_DECODE_WIDTH;
   }
@@ -402,10 +419,10 @@ async function decodeFrame(video, canvas, ctx, vw, vh, scanner, detector) {
   if (canvas.width !== dstW || canvas.height !== dstH) {
     canvas.width = dstW;
     canvas.height = dstH;
-    ctx.imageSmoothingEnabled = false;
-    if ("webkitImageSmoothingEnabled" in ctx) {
-      ctx.webkitImageSmoothingEnabled = false;
-    }
+  }
+  ctx.imageSmoothingEnabled = Boolean(attempt.smooth);
+  if ("webkitImageSmoothingEnabled" in ctx) {
+    ctx.webkitImageSmoothingEnabled = Boolean(attempt.smooth);
   }
 
   ctx.drawImage(video, sx, sy, sw, sh, 0, 0, dstW, dstH);
@@ -483,6 +500,7 @@ function normalizeBarcode(text) {
   }
   const cleaned = out
     .replace(/^\]C1/i, "")
+    .replace(/^\*+|\*+$/g, "")
     .replace(/[\s\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000\uFEFF]+/g, "")
     .toUpperCase();
   return stripLeadingWrappers(cleaned);
