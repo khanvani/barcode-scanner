@@ -458,7 +458,7 @@ export default function App() {
 
               {rejectedBarcode && !pendingBarcode && (
                 <div className="scanner-modal-reject" role="status">
-                  Read <strong>{rejectedBarcode}</strong> — not a valid format
+                  Read <strong>{rejectedBarcode}</strong> — only prefix + digits allowed, no special characters
                 </div>
               )}
 

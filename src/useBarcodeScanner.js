@@ -19,8 +19,10 @@ const MIN_DECODE_WIDTH = 1280;
 const COOLDOWN_MS = 1500;
 const REJECT_COOLDOWN_MS = 2500;
 
-// Longer prefixes first so GNED wins over GN over AHM, and G last.
+// Longer prefixes first so GNED wins over GN, and G last.
+// Letters + digits only — hyphens, slashes, asterisks, etc. are rejected.
 const VALID_BARCODE_RE = /^(GNED|AHM|GN|F|M|G|L)\d+$/;
+const SPECIAL_CHAR_RE = /[^A-Z0-9]/;
 
 const NATIVE_FORMATS = ["code_128", "code_39"];
 
@@ -29,7 +31,7 @@ export function useBarcodeScanner({ videoRef, onScan, onReject, onError, active,
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const trackRef = useRef(null);
-  const scannerRef = useRef(null);
+  const scannerRef = useRef(null);  
   const detectorRef = useRef(null);
   const lastScannedRef = useRef("");
   const lastRejectedRef = useRef("");
@@ -427,7 +429,7 @@ async function decodeImage(imageData, canvas, scanner, detector) {
     }
   }
 
-  const nativeHasValid = texts.some((t) => VALID_BARCODE_RE.test(normalizeBarcode(t)));
+  const nativeHasValid = texts.some((t) => isAcceptedBarcode(normalizeBarcode(t)));
   if (!nativeHasValid && scanner) {
     const symbols = await scanImageData(imageData, scanner);
     for (const symbol of symbols) {
@@ -448,7 +450,7 @@ function handleDecodedTexts(texts, refs) {
   }
   if (!normalized.length) return;
 
-  const valid = normalized.find((t) => VALID_BARCODE_RE.test(t) && t !== refs.lastScannedRef.current);
+  const valid = normalized.find((t) => isAcceptedBarcode(t) && t !== refs.lastScannedRef.current);
   if (valid) {
     clearTimeout(refs.cooldownRef.current);
     refs.lastScannedRef.current = valid;
@@ -459,7 +461,7 @@ function handleDecodedTexts(texts, refs) {
     return;
   }
 
-  const rejected = normalized.find((t) => !VALID_BARCODE_RE.test(t) && t !== refs.lastRejectedRef.current);
+  const rejected = normalized.find((t) => !isAcceptedBarcode(t) && t !== refs.lastRejectedRef.current);
   if (rejected) {
     clearTimeout(refs.rejectCooldownRef.current);
     refs.lastRejectedRef.current = rejected;
@@ -477,7 +479,15 @@ function normalizeBarcode(text) {
   for (let i = 0; i < raw.length; i++) {
     if (raw.charCodeAt(i) >= 32) out += raw[i];
   }
-  return out.replace(/^\]C1/i, "").replace(/\s+/g, "").toUpperCase();
+  return out
+    .replace(/^\]C1/i, "")
+    .replace(/[\s\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000\uFEFF]+/g, "")
+    .toUpperCase();
+}
+
+function isAcceptedBarcode(text) {
+  if (!text || SPECIAL_CHAR_RE.test(text)) return false;
+  return VALID_BARCODE_RE.test(text);
 }
 
 /**
