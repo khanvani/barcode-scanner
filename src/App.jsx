@@ -11,7 +11,6 @@ import {
   hydrateScans,
   mergeScanLists,
   readPending,
-  persistPending,
   clearPending,
   clearStoredScans,
 } from './scanStore';
@@ -24,7 +23,7 @@ export default function App() {
   const [camError, setCamError] = useState('');
   const [saveError, setSaveError] = useState('');
   const [duplicateBarcode, setDuplicateBarcode] = useState(null);
-  const [pendingBarcode, setPendingBarcode] = useState(() => readPending());
+  const [ackBarcode, setAckBarcode] = useState(null);
   const [rejectedBarcode, setRejectedBarcode] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -52,13 +51,25 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const leftover = readPending();
+    if (leftover) {
+      setScans((prev) => {
+        if (prev.some((s) => s.barcode === leftover)) {
+          clearPending();
+          return prev;
+        }
+        const next = [{ barcode: leftover, scannedAt: nowISO() }, ...prev];
+        persistScans(next);
+        clearPending();
+        return next;
+      });
+    }
+  }, []);
+
+  useEffect(() => {
     if (scans.length === 0) return;
     persistScans(scans);
   }, [scans]);
-
-  useEffect(() => {
-    persistPending(pendingBarcode);
-  }, [pendingBarcode]);
 
   useEffect(() => {
     const flush = () => {
@@ -94,9 +105,17 @@ export default function App() {
           setDuplicateBarcode(barcode);
           return prev;
         }
+        const next = [{ barcode, scannedAt: nowISO() }, ...prev];
+        const saved = persistScans(next);
+        if (!saved) {
+          setSaveError('Could not save to device storage. Export a CSV copy now — data is still on screen.');
+        } else {
+          setSaveError('');
+        }
         beep();
-        setPendingBarcode(barcode);
-        return prev;
+        setLastScan(barcode);
+        setAckBarcode(barcode);
+        return next;
       });
     },
     [beep]
@@ -125,7 +144,7 @@ export default function App() {
     onReject: handleReject,
     onError: handleCamError,
     active: scannerOpen,
-    paused: Boolean(duplicateBarcode) || Boolean(pendingBarcode),
+    paused: Boolean(duplicateBarcode) || Boolean(ackBarcode),
   });
 
   const openScanner = () => {
@@ -136,37 +155,15 @@ export default function App() {
   const closeScanner = () => {
     setScannerOpen(false);
     setRejectedBarcode(null);
+    setAckBarcode(null);
     setFocusRing(null);
     setDuplicateBarcode(null);
     clearTimeout(focusTimerRef.current);
     clearTimeout(rejectTimerRef.current);
   };
 
-  const confirmPending = () => {
-    if (!pendingBarcode) return;
-    const barcode = pendingBarcode;
-    if (scans.some((s) => s.barcode === barcode)) {
-      setDuplicateBarcode(barcode);
-      setPendingBarcode(null);
-      clearPending();
-      return;
-    }
-    const next = [{ barcode, scannedAt: nowISO() }, ...scans];
-    const saved = persistScans(next);
-    setScans(next);
-    setLastScan(barcode);
-    if (!saved) {
-      setSaveError('Could not save to device storage. Export a CSV copy now — data is still on screen.');
-      return;
-    }
-    setSaveError('');
-    setPendingBarcode(null);
-    clearPending();
-  };
-
-  const cancelPending = () => {
-    setPendingBarcode(null);
-    clearPending();
+  const dismissAck = () => {
+    setAckBarcode(null);
   };
 
   const handleViewportTap = (e) => {
@@ -185,7 +182,7 @@ export default function App() {
     clearedRef.current = true;
     setScans([]);
     setLastScan(null);
-    setPendingBarcode(null);
+    setAckBarcode(null);
     setSaveError('');
     clearStoredScans();
     setConfirmClear(false);
@@ -326,20 +323,6 @@ export default function App() {
           </div>
         )}
 
-        {pendingBarcode && !scannerOpen && (
-          <div className="pending-card">
-            <p className="pending-card-label">Unconfirmed scan</p>
-            <div className="pending-card-value">{pendingBarcode}</div>
-            <div className="scanner-confirm-actions">
-              <button type="button" className="btn-scan-cancel" onClick={cancelPending}>
-                Cancel
-              </button>
-              <button type="button" className="btn-scan-confirm" onClick={confirmPending}>
-                Confirm
-              </button>
-            </div>
-          </div>
-        )}
         {/* Scan button */}
         <div className="scan-trigger-wrap">
           <button className="btn-open-scanner" onClick={openScanner}>
@@ -514,28 +497,24 @@ export default function App() {
                 <div className="scanner-modal-error" role="alert">{camError}</div>
               )}
 
-              {rejectedBarcode && !pendingBarcode && (
+              {rejectedBarcode && !ackBarcode && (
                 <div className="scanner-modal-reject" role="status">
                   Read <strong>{rejectedBarcode}</strong> — only prefix + digits allowed, no special characters
                 </div>
               )}
 
-              {!pendingBarcode && (
+              {!ackBarcode && (
                 <p className="scanner-modal-hint">Fill the red box with one barcode — zoom in if scanning a PDF</p>
               )}
             </div>
 
-            {pendingBarcode && (
+            {ackBarcode && (
               <div className="scanner-confirm-bar">
-                <div className="scanner-confirm-value" aria-live="polite">{pendingBarcode}</div>
-                <div className="scanner-confirm-actions">
-                  <button type="button" className="btn-scan-cancel" onClick={cancelPending}>
-                    Cancel
-                  </button>
-                  <button type="button" className="btn-scan-confirm" onClick={confirmPending} autoFocus>
-                    Confirm
-                  </button>
-                </div>
+                <p className="scanner-ack-label">Scanned</p>
+                <div className="scanner-confirm-value" aria-live="polite">{ackBarcode}</div>
+                <button type="button" className="btn-scan-confirm" onClick={dismissAck} autoFocus>
+                  OK
+                </button>
               </div>
             )}
           </div>

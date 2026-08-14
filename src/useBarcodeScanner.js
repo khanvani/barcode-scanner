@@ -21,7 +21,7 @@ const REJECT_COOLDOWN_MS = 2500;
 
 // Longer prefixes first so GNED wins over GN, and G last.
 // Letters + digits only — hyphens, slashes, asterisks, etc. are rejected.
-const VALID_BARCODE_RE = /^(GNED|GN|F|M|G|L)\d+$/;
+const VALID_BARCODE_RE = /^(GNED|AHM|GN|F|M|G|L)\d+$/;
 const SPECIAL_CHAR_RE = /[^A-Z0-9]/;
 // Longer first — peeled off before validate/store when the rest is a valid code.
 const STRIP_WRAPPERS = ["Z3AHM", "AHM"];
