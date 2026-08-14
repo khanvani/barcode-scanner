@@ -157,6 +157,13 @@
   background: var(--error-light);
 }
 
+.header-menu-version {
+  border-top: 1px solid var(--border-light);
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
 /* ── Install Prompt (bottom sheet) ── */
 .install-overlay {
   position: fixed;
@@ -296,7 +303,6 @@
 .btn-install-dismiss:hover { background: var(--bg-tertiary); }
 .btn-install-dismiss:active { transform: scale(0.98); }
 
-/* ── Main layout ── */
 .app-main {
   flex: 1;
   max-width: 720px;
@@ -306,6 +312,44 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.save-error {
+  background: #fef3c7;
+  color: #78350f;
+  border: 1px solid #f59e0b;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pending-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+}
+
+.pending-card-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.pending-card-value {
+  font-family: ui-monospace, monospace;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--primary);
+  word-break: break-all;
+  margin-bottom: 12px;
 }
 
 /* ── Scan trigger button ── */

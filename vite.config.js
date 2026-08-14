@@ -35,6 +35,7 @@ export default defineConfig({
         ]
       },
       workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
         runtimeCaching: [
           {
             urlPattern: /^https?:\/\/.*\.(woff|woff2|ttf|eot|ico|png|jpg|jpeg|svg|gif)$/,
@@ -48,20 +49,19 @@ export default defineConfig({
             }
           },
           {
-            // JS and CSS use StaleWhileRevalidate — serves cache instantly
-            // but fetches fresh version in background for next load
             urlPattern: /^https?:\/\/.*\.(js|css)$/,
-            handler: 'StaleWhileRevalidate',
+            handler: 'CacheFirst',
             options: {
               cacheName: 'app-code',
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 7
+                maxAgeSeconds: 60 * 60 * 24 * 30
               }
             }
           }
         ],
-        navigateFallback: null,
+        navigateFallback: 'index.html',
+        navigateFallbackDenylist: [/^\/barcode-scanner\/api/],
         cleanupOutdatedCaches: true,
         skipWaiting: true,
         clientsClaim: true

@@ -2,42 +2,29 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useBarcodeScanner, SCAN_BAND_TOP, SCAN_BAND_HEIGHT } from './useBarcodeScanner';
 import { useBeep } from './useBeep';
 import { downloadCSV } from './csvUtils';
+import { version as appVersion } from '../package.json';
 import { useInstallPrompt } from './useInstallPrompt';
 import { nowISO, formatISTParts, scanTimeValue } from './timeUtils';
+import {
+  readLocalScans,
+  persistScans,
+  hydrateScans,
+  mergeScanLists,
+  readPending,
+  persistPending,
+  clearPending,
+  clearStoredScans,
+} from './scanStore';
 import './App.css';
-
-const STORAGE_KEY = 'barcode-scans';
-const BACKUP_KEY = 'barcode-scans-backup';
-
-function readScans() {
-  for (const key of [STORAGE_KEY, BACKUP_KEY]) {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(key) || '[]');
-      if (Array.isArray(parsed) && parsed.length) return parsed;
-    } catch {
-      /* try the next key */
-    }
-  }
-  return [];
-}
-
-function persistScans(next) {
-  const json = JSON.stringify(next);
-  localStorage.setItem(STORAGE_KEY, json);
-  localStorage.setItem(BACKUP_KEY, json);
-}
 
 export default function App() {
   const [scannerOpen, setScannerOpen] = useState(false);
-  const [scans, setScans] = useState(() => {
-    const loaded = readScans();
-    if (loaded.length) persistScans(loaded);
-    return loaded;
-  });
+  const [scans, setScans] = useState(() => readLocalScans());
   const [lastScan, setLastScan] = useState(null);
   const [camError, setCamError] = useState('');
+  const [saveError, setSaveError] = useState('');
   const [duplicateBarcode, setDuplicateBarcode] = useState(null);
-  const [pendingBarcode, setPendingBarcode] = useState(null);
+  const [pendingBarcode, setPendingBarcode] = useState(() => readPending());
   const [rejectedBarcode, setRejectedBarcode] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -46,9 +33,47 @@ export default function App() {
   const [dismissedInstall, setDismissedInstall] = useState(false);
   const videoRef = useRef(null);
   const menuRef = useRef(null);
+  const scansRef = useRef(scans);
+  const clearedRef = useRef(false);
   const focusTimerRef = useRef(null);
   const rejectTimerRef = useRef(null);
   const beep = useBeep();
+  scansRef.current = scans;
+
+  useEffect(() => {
+    let cancelled = false;
+    hydrateScans(scansRef.current).then((merged) => {
+      if (cancelled || clearedRef.current || !merged.length) return;
+      setScans((prev) => mergeScanLists(prev, merged));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (scans.length === 0) return;
+    persistScans(scans);
+  }, [scans]);
+
+  useEffect(() => {
+    persistPending(pendingBarcode);
+  }, [pendingBarcode]);
+
+  useEffect(() => {
+    const flush = () => {
+      if (scansRef.current.length) persistScans(scansRef.current);
+    };
+    const onHidden = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onHidden);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onHidden);
+    };
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -111,7 +136,6 @@ export default function App() {
   const closeScanner = () => {
     setScannerOpen(false);
     setRejectedBarcode(null);
-    setPendingBarcode(null);
     setFocusRing(null);
     setDuplicateBarcode(null);
     clearTimeout(focusTimerRef.current);
@@ -121,22 +145,28 @@ export default function App() {
   const confirmPending = () => {
     if (!pendingBarcode) return;
     const barcode = pendingBarcode;
-    setScans((prev) => {
-      if (prev.some((s) => s.barcode === barcode)) {
-        setDuplicateBarcode(barcode);
-        setPendingBarcode(null);
-        return prev;
-      }
-      setLastScan(barcode);
-      const next = [{ barcode, scannedAt: nowISO() }, ...prev];
-      persistScans(next);
-      return next;
-    });
+    if (scans.some((s) => s.barcode === barcode)) {
+      setDuplicateBarcode(barcode);
+      setPendingBarcode(null);
+      clearPending();
+      return;
+    }
+    const next = [{ barcode, scannedAt: nowISO() }, ...scans];
+    const saved = persistScans(next);
+    setScans(next);
+    setLastScan(barcode);
+    if (!saved) {
+      setSaveError('Could not save to device storage. Export a CSV copy now — data is still on screen.');
+      return;
+    }
+    setSaveError('');
     setPendingBarcode(null);
+    clearPending();
   };
 
   const cancelPending = () => {
     setPendingBarcode(null);
+    clearPending();
   };
 
   const handleViewportTap = (e) => {
@@ -152,10 +182,12 @@ export default function App() {
   };
 
   const clearScans = () => {
+    clearedRef.current = true;
     setScans([]);
     setLastScan(null);
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(BACKUP_KEY);
+    setPendingBarcode(null);
+    setSaveError('');
+    clearStoredScans();
     setConfirmClear(false);
     setMenuOpen(false);
   };
@@ -225,6 +257,7 @@ export default function App() {
               >
                 Clear all scans…
               </button>
+              <div className="header-menu-version">Version {appVersion}</div>
             </div>
           )}
         </div>
@@ -282,6 +315,31 @@ export default function App() {
 
       {/* ── Main page ── */}
       <main className="app-main">
+        {saveError && (
+          <div className="save-error" role="alert">
+            {saveError}
+            {scans.length > 0 && (
+              <button type="button" className="btn-export" onClick={() => downloadCSV(scans)}>
+                Export now
+              </button>
+            )}
+          </div>
+        )}
+
+        {pendingBarcode && !scannerOpen && (
+          <div className="pending-card">
+            <p className="pending-card-label">Unconfirmed scan</p>
+            <div className="pending-card-value">{pendingBarcode}</div>
+            <div className="scanner-confirm-actions">
+              <button type="button" className="btn-scan-cancel" onClick={cancelPending}>
+                Cancel
+              </button>
+              <button type="button" className="btn-scan-confirm" onClick={confirmPending}>
+                Confirm
+              </button>
+            </div>
+          </div>
+        )}
         {/* Scan button */}
         <div className="scan-trigger-wrap">
           <button className="btn-open-scanner" onClick={openScanner}>
