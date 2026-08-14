@@ -1,9 +1,26 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="6" fill="#8b0000"/>
-  <rect x="4" y="8" width="3" height="16" fill="white"/>
-  <rect x="9" y="8" width="1.5" height="16" fill="white"/>
-  <rect x="12" y="8" width="3" height="16" fill="white"/>
-  <rect x="17" y="8" width="1.5" height="16" fill="white"/>
-  <rect x="20" y="8" width="4" height="16" fill="white"/>
-  <rect x="26" y="8" width="2" height="16" fill="white"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="Barcode Scanner">
+  <rect width="32" height="32" rx="7" fill="#8B0000"/>
+  <!-- viewfinder corners -->
+  <g fill="#fff">
+    <rect x="6.5" y="6.5" width="6" height="2.2"/>
+    <rect x="6.5" y="6.5" width="2.2" height="6"/>
+    <rect x="19.5" y="6.5" width="6" height="2.2"/>
+    <rect x="23.3" y="6.5" width="2.2" height="6"/>
+    <rect x="6.5" y="23.3" width="6" height="2.2"/>
+    <rect x="6.5" y="19.5" width="2.2" height="6"/>
+    <rect x="19.5" y="23.3" width="6" height="2.2"/>
+    <rect x="23.3" y="19.5" width="2.2" height="6"/>
+  </g>
+  <!-- barcode, mirrored so it sits in the center -->
+  <g fill="#fff">
+    <rect x="7.5" y="10" width="2" height="12"/>
+    <rect x="10.4" y="10" width="1" height="12"/>
+    <rect x="12.3" y="10" width="2.2" height="12"/>
+    <rect x="15.4" y="10" width="1.2" height="12"/>
+    <rect x="17.5" y="10" width="2.2" height="12"/>
+    <rect x="20.6" y="10" width="1" height="12"/>
+    <rect x="22.5" y="10" width="2" height="12"/>
+  </g>
+  <!-- scan beam -->
+  <rect x="7.5" y="15.4" width="17" height="1.2" rx="0.6" fill="#fff"/>
 </svg>
