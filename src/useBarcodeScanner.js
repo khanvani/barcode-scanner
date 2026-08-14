@@ -21,8 +21,10 @@ const REJECT_COOLDOWN_MS = 2500;
 
 // Longer prefixes first so GNED wins over GN, and G last.
 // Letters + digits only — hyphens, slashes, asterisks, etc. are rejected.
-const VALID_BARCODE_RE = /^(GNED|AHM|GN|F|M|G|L)\d+$/;
+const VALID_BARCODE_RE = /^(GNED|GN|F|M|G|L)\d+$/;
 const SPECIAL_CHAR_RE = /[^A-Z0-9]/;
+// Longer first — peeled off before validate/store when the rest is a valid code.
+const STRIP_WRAPPERS = ["Z3AHM", "AHM"];
 
 const NATIVE_FORMATS = ["code_128", "code_39"];
 
@@ -31,7 +33,7 @@ export function useBarcodeScanner({ videoRef, onScan, onReject, onError, active,
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const trackRef = useRef(null);
-  const scannerRef = useRef(null);  
+  const scannerRef = useRef(null);
   const detectorRef = useRef(null);
   const lastScannedRef = useRef("");
   const lastRejectedRef = useRef("");
@@ -479,10 +481,23 @@ function normalizeBarcode(text) {
   for (let i = 0; i < raw.length; i++) {
     if (raw.charCodeAt(i) >= 32) out += raw[i];
   }
-  return out
+  const cleaned = out
     .replace(/^\]C1/i, "")
     .replace(/[\s\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000\uFEFF]+/g, "")
     .toUpperCase();
+  return stripLeadingWrappers(cleaned);
+}
+
+/** Peel off wrappers like Z3AHM / AHM before validate/store when the rest is a valid code. */
+function stripLeadingWrappers(text) {
+  for (const wrapper of STRIP_WRAPPERS) {
+    if (!text.startsWith(wrapper) || text.length <= wrapper.length) continue;
+    const rest = text.slice(wrapper.length);
+    if (rest && VALID_BARCODE_RE.test(rest) && !SPECIAL_CHAR_RE.test(rest)) {
+      return rest;
+    }
+  }
+  return text;
 }
 
 function isAcceptedBarcode(text) {
