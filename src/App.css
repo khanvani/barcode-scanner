@@ -776,50 +776,6 @@ td { padding: 12px; vertical-align: top; }
   text-align: center;
 }
 
-.scanner-confirm-bar {
-  flex-shrink: 0;
-  background: #fff;
-  padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
-  z-index: 5;
-}
-
-.scanner-confirm-value {
-  font-family: ui-monospace, monospace;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--primary);
-  text-align: center;
-  word-break: break-all;
-  margin-bottom: 12px;
-}
-
-.scanner-ack-label {
-  margin: 0 0 4px;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.btn-scan-confirm {
-  width: 100%;
-  min-height: 48px;
-  border-radius: var(--radius-md);
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  touch-action: manipulation;
-  background: var(--primary);
-  color: #fff;
-  border: none;
-}
-
-.btn-scan-confirm:active {
-  transform: scale(0.98);
-}
-
 /* ── Duplicate Scan Modal ── */
 .modal-overlay {
   position: fixed;
@@ -864,6 +820,11 @@ td { padding: 12px; vertical-align: top; }
 }
 
 .modal-icon svg { width: 22px; height: 22px; }
+
+.modal-icon-success {
+  background: var(--success-light);
+  color: #047857;
+}
 
 .modal-header h3 {
   font-size: 16px;
@@ -932,6 +893,12 @@ td { padding: 12px; vertical-align: top; }
   word-break: break-all;
 }
 
+.modal-barcode-success {
+  color: #047857;
+  background: var(--success-light);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
 .btn-modal-ok {
   width: 100%;
   padding: 11px;
@@ -948,6 +915,15 @@ td { padding: 12px; vertical-align: top; }
 
 .btn-modal-ok:hover { background: var(--primary-dark); box-shadow: var(--shadow-md); }
 .btn-modal-ok:active { transform: scale(0.98); }
+
+.btn-modal-ok-success {
+  background: var(--success);
+}
+
+.btn-modal-ok-success:hover {
+  background: #059669;
+  box-shadow: var(--shadow-md);
+}
 
 .btn-modal-cancel {
   flex: 1;

@@ -505,26 +505,14 @@ export default function App() {
                 <div className="scanner-modal-error" role="alert">{camError}</div>
               )}
 
-              {rejectedBarcode && !ackBarcode && (
+              {rejectedBarcode && (
                 <div className="scanner-modal-reject" role="status">
                   Read <strong>{rejectedBarcode}</strong> — only prefix + digits allowed, no special characters
                 </div>
               )}
 
-              {!ackBarcode && (
-                <p className="scanner-modal-hint">Hold the barcode in view — bottom of the card is fine</p>
-              )}
+              <p className="scanner-modal-hint">Hold the barcode in view — bottom of the card is fine</p>
             </div>
-
-            {ackBarcode && (
-              <div className="scanner-confirm-bar">
-                <p className="scanner-ack-label">Scanned</p>
-                <div className="scanner-confirm-value" aria-live="polite">{ackBarcode}</div>
-                <button type="button" className="btn-scan-confirm" onClick={dismissAck} autoFocus>
-                  OK
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -585,6 +573,32 @@ export default function App() {
             </div>
             <div className="modal-footer">
               <button className="btn-modal-ok" onClick={() => setDuplicateBarcode(null)} autoFocus>
+                OK, Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Scan success modal ── */}
+      {ackBarcode && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="ack-title">
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-icon modal-icon-success">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
+                  <path d="M8 12.5l2.5 2.5L16 9.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <h3 id="ack-title">Scanned</h3>
+            </div>
+            <div className="modal-body">
+              <p>This barcode has been recorded.</p>
+              <div className="modal-barcode modal-barcode-success">{ackBarcode}</div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-modal-ok btn-modal-ok-success" onClick={dismissAck} autoFocus>
                 OK, Got it
               </button>
             </div>
