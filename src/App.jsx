@@ -33,11 +33,11 @@ export default function App() {
   const [rejectedBarcode, setRejectedBarcode] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
   const [focusRing, setFocusRing] = useState(null);
   const { installPrompt, isInstalled, isIOS, triggerInstall } = useInstallPrompt();
   const [dismissedInstall, setDismissedInstall] = useState(false);
   const videoRef = useRef(null);
-  const menuRef = useRef(null);
   const scansRef = useRef(scans);
   const clearedRef = useRef(false);
   const focusTimerRef = useRef(null);
@@ -93,15 +93,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!menuOpen) return;
-    const onPointer = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
+    if (!menuOpen && !infoOpen) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
         setMenuOpen(false);
+        setInfoOpen(false);
       }
     };
-    document.addEventListener('pointerdown', onPointer);
-    return () => document.removeEventListener('pointerdown', onPointer);
-  }, [menuOpen]);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [menuOpen, infoOpen]);
 
   const handleScan = useCallback(
     (barcode) => {
@@ -208,61 +209,48 @@ export default function App() {
           <rect x="21" y="4" width="1" height="16" fill="currentColor" />
         </svg>
         <div style={{ flex: 1 }}>
-          <h1>Barcode Scanner</h1>
+          <h1>Scanner</h1>
           <div className="header-brand">Scan. Track. Export.</div>
         </div>
-        <div className="header-menu" ref={menuRef}>
+        <div className="header-actions">
           <button
             type="button"
-            className="btn-header-cog"
-            aria-label="Settings"
-            aria-haspopup="true"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((open) => !open)}
+            className="btn-header-icon"
+            aria-label="About this scanner"
+            onClick={() => {
+              setMenuOpen(false);
+              setInfoOpen(true);
+            }}
           >
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
-                stroke="currentColor"
-                strokeWidth="1.8"
-              />
-              <path
-                d="M19.4 13a7.8 7.8 0 0 0 .1-2l2-1.5-2-3.5-2.4.5a8 8 0 0 0-1.7-1L15 3h-6l-.4 2.5a8 8 0 0 0-1.7 1L6.5 6 4.5 9.5 6.5 11a7.8 7.8 0 0 0 0 2l-2 1.5 2 3.5 2.4-.5a8 8 0 0 0 1.7 1L9 21h6l.4-2.5a8 8 0 0 0 1.7-1l2.4.5 2-3.5-2-1.5Z"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinejoin="round"
-              />
+              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+              <path d="M12 11v6M12 8h.01" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
             </svg>
           </button>
-          {menuOpen && (
-            <div className="header-menu-dropdown" role="menu">
-              <button
-                type="button"
-                className="header-menu-item"
-                role="menuitem"
-                disabled={scans.length === 0}
-                onClick={() => {
-                  downloadCSV(scans);
-                  setMenuOpen(false);
-                }}
-              >
-                Export CSV
-              </button>
-              <button
-                type="button"
-                className="header-menu-item header-menu-item-danger"
-                role="menuitem"
-                disabled={scans.length === 0}
-                onClick={() => {
-                  setMenuOpen(false);
-                  setConfirmClear(true);
-                }}
-              >
-                Clear all scans…
-              </button>
-              <div className="header-menu-version">Version {appVersion}</div>
-            </div>
-          )}
+          <div className="header-menu">
+            <button
+              type="button"
+              className="btn-header-icon"
+              aria-label="Settings"
+              aria-haspopup="dialog"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                />
+                <path
+                  d="M19.4 13a7.8 7.8 0 0 0 .1-2l2-1.5-2-3.5-2.4.5a8 8 0 0 0-1.7-1L15 3h-6l-.4 2.5a8 8 0 0 0-1.7 1L6.5 6 4.5 9.5 6.5 11a7.8 7.8 0 0 0 0 2l-2 1.5 2 3.5 2.4-.5a8 8 0 0 0 1.7 1L9 21h6l.4-2.5a8 8 0 0 0 1.7-1l2.4.5 2-3.5-2-1.5Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -280,7 +268,7 @@ export default function App() {
                 <rect x="21" y="4" width="1" height="16" fill="currentColor" />
               </svg>
             </div>
-            <h3 className="install-sheet-title">Install Barcode Scanner</h3>
+            <h3 className="install-sheet-title">Install Scanner</h3>
             <p className="install-sheet-desc">
               {isIOS
                 ? <><strong>Tap the Share button</strong> in Safari, then select <strong>"Add to Home Screen"</strong> to install this app.</>
@@ -340,34 +328,42 @@ export default function App() {
               <rect x="16" y="4" width="3" height="16" fill="currentColor" />
               <rect x="21" y="4" width="1" height="16" fill="currentColor" />
             </svg>
-            Scan Barcode
+            Scan
           </button>
         </div>
 
         {/* Results card */}
-        <section className="results-card">
+        <section className="results-card" aria-labelledby="scans-heading">
           <div className="results-header">
-            <h2>
+            <h2 id="scans-heading">
               Scanned Data
               {scans.length > 0 && <span className="badge">{scans.length}</span>}
             </h2>
-            {scans.length > 0 && (
-              <button className="btn-export" onClick={() => downloadCSV(scans)}>
-                Export
-              </button>
-            )}
           </div>
 
           {scans.length === 0 ? (
-            <p className="empty-msg">No scans yet — press "Scan Barcode" to start.</p>
+            <div className="empty-state">
+              <div className="empty-state-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <rect x="2" y="4" width="2" height="16" fill="currentColor" />
+                  <rect x="6" y="4" width="1" height="16" fill="currentColor" />
+                  <rect x="9" y="4" width="2" height="16" fill="currentColor" />
+                  <rect x="13" y="4" width="1" height="16" fill="currentColor" />
+                  <rect x="16" y="4" width="3" height="16" fill="currentColor" />
+                  <rect x="21" y="4" width="1" height="16" fill="currentColor" />
+                </svg>
+              </div>
+              <p className="empty-state-title">No scans yet</p>
+              <p className="empty-state-hint">Press Scan to start recording</p>
+            </div>
           ) : (
             <div className="table-wrap">
-              <table>
+              <table className="scans-table">
                 <thead>
                   <tr>
-                    <th className="col-num">#</th>
-                    <th>Barcode</th>
-                    <th>Scanned At</th>
+                    <th className="col-num" scope="col">#</th>
+                    <th scope="col">Barcode</th>
+                    <th className="col-time" scope="col">Scanned At</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -391,9 +387,13 @@ export default function App() {
         </section>
       </main>
 
+      <footer className="app-footer">
+        <p className="app-footer-copy">For support, contact Rahul Khanvani</p>
+      </footer>
+
       {/* ── Scanner Modal ── */}
       {scannerOpen && (
-        <div className="scanner-modal-overlay" role="dialog" aria-modal="true" aria-label="Barcode Scanner">
+        <div className="scanner-modal-overlay" role="dialog" aria-modal="true" aria-label="Scanner">
           <div className="scanner-modal">
 
             {/* Modal top bar */}
@@ -517,7 +517,104 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Confirm Clear Modal ── */}
+      {/* ── Settings sheet ── */}
+      {menuOpen && (
+        <div
+          className="sheet-overlay"
+          role="presentation"
+          onClick={() => setMenuOpen(false)}
+        >
+          <div
+            className="sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sheet-handle" aria-hidden="true" />
+            <h3 id="settings-title" className="sheet-title">Settings</h3>
+            <button
+              type="button"
+              className="sheet-row"
+              disabled={scans.length === 0}
+              onClick={() => {
+                downloadCSV(scans);
+                setMenuOpen(false);
+              }}
+            >
+              <span className="sheet-row-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M12 3v12M8 11l4 4 4-4M5 19h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+              <span className="sheet-row-text">
+                <span className="sheet-row-label">Export CSV</span>
+                <span className="sheet-row-hint">Share or save all scanned records</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="sheet-row sheet-row-danger"
+              disabled={scans.length === 0}
+              onClick={() => {
+                setMenuOpen(false);
+                setConfirmClear(true);
+              }}
+            >
+              <span className="sheet-row-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+              <span className="sheet-row-text">
+                <span className="sheet-row-label">Clear all scans</span>
+                <span className="sheet-row-hint">Permanently delete records on this device</span>
+              </span>
+            </button>
+            <p className="sheet-version">Version {appVersion}</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── About / validation info ── */}
+      {infoOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="info-title">
+          <div className="modal modal-info">
+            <div className="modal-header">
+              <div className="modal-icon modal-icon-info">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
+                  <path d="M12 11v6M12 8h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </div>
+              <h3 id="info-title">About Scanner</h3>
+            </div>
+            <div className="modal-body">
+              <h4 className="info-section-title">Features</h4>
+              <ul className="info-list">
+                <li>Reads 1D barcodes and QR codes</li>
+                <li>Saves valid scans immediately on this device</li>
+                <li>Blocks duplicates in the current list</li>
+                <li>Export shares a CSV (and saves a copy on Android)</li>
+                <li>Works offline after the first load</li>
+                <li>Times are stored and shown in IST</li>
+              </ul>
+              <h4 className="info-section-title">Valid IDs</h4>
+              <ul className="info-list">
+                <li>Must start with <strong>GNED, AHM, GN, F, M, G,</strong> or <strong>L</strong>, then digits only</li>
+                <li>Letters and numbers only — no hyphens, slashes, or other symbols</li>
+                <li>Spaces are removed automatically</li>
+                <li>Wrappers like <strong>Z3AHM</strong> / <strong>AHM</strong> are stripped when the rest is a valid ID</li>
+              </ul>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-modal-ok" onClick={() => setInfoOpen(false)} autoFocus>
+                OK, Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {confirmClear && (
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="clear-title">
           <div className="modal">

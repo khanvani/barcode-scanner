@@ -67,7 +67,7 @@ if (!self.define) {
     });
   };
 }
-define(['./workbox-c43fcf07'], (function (workbox) { 'use strict';
+define(['./workbox-2ae722a1'], (function (workbox) { 'use strict';
 
   self.skipWaiting();
   workbox.clientsClaim();
@@ -80,8 +80,15 @@ define(['./workbox-c43fcf07'], (function (workbox) { 'use strict';
   workbox.precacheAndRoute([{
     "url": "registerSW.js",
     "revision": "68aa7f5ae34280dd87d01432dcac45a2"
+  }, {
+    "url": "index.html",
+    "revision": "0.gv7qpjfdeeo"
   }], {});
   workbox.cleanupOutdatedCaches();
+  workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html"), {
+    allowlist: [/^\/$/],
+    denylist: [/^\/barcode-scanner\/api/]
+  }));
   workbox.registerRoute(/^https?:\/\/.*\.(woff|woff2|ttf|eot|ico|png|jpg|jpeg|svg|gif)$/, new workbox.CacheFirst({
     "cacheName": "static-assets",
     plugins: [new workbox.ExpirationPlugin({
@@ -89,11 +96,11 @@ define(['./workbox-c43fcf07'], (function (workbox) { 'use strict';
       maxAgeSeconds: 2592000
     })]
   }), 'GET');
-  workbox.registerRoute(/^https?:\/\/.*\.(js|css)$/, new workbox.StaleWhileRevalidate({
+  workbox.registerRoute(/^https?:\/\/.*\.(js|css)$/, new workbox.CacheFirst({
     "cacheName": "app-code",
     plugins: [new workbox.ExpirationPlugin({
       maxEntries: 50,
-      maxAgeSeconds: 604800
+      maxAgeSeconds: 2592000
     })]
   }), 'GET');
 
