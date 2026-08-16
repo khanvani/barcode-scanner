@@ -306,13 +306,14 @@
   color: var(--text-primary);
   font-weight: 600;
 }
-  color: var(--text-tertiary);
-}
 
-/* ── Install Prompt (bottom sheet) ── */
+/* ── Install Prompt ── */
 .install-overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   background: rgba(0,0,0,0.5);
   backdrop-filter: blur(3px);
   display: flex;
@@ -325,8 +326,8 @@
 .install-sheet {
   background: var(--bg-primary);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  width: 100%;
-  max-width: 480px;
+  width: min(480px, 100%);
+  margin: 0 auto;
   padding: 28px 24px calc(36px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
@@ -1245,13 +1246,15 @@
   .install-overlay,
   .sheet-overlay {
     align-items: center;
+    justify-content: center;
     padding: 32px 24px;
   }
 
   .install-sheet,
   .sheet {
     border-radius: var(--radius-xl);
-    max-width: 420px;
+    width: min(420px, 100%);
+    margin: 0 auto;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.28);
   }
 
