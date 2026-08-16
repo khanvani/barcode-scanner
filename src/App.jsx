@@ -8,6 +8,7 @@ import {
 } from './useBarcodeScanner';
 import { useBeep } from './useBeep';
 import { downloadCSV } from './csvUtils';
+import { refreshApp } from './refreshApp';
 import { version as appVersion } from '../package.json';
 import { useInstallPrompt } from './useInstallPrompt';
 import { nowISO, formatISTParts, scanTimeValue } from './timeUtils';
@@ -34,6 +35,7 @@ export default function App() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [focusRing, setFocusRing] = useState(null);
   const { installPrompt, isInstalled, isIOS, triggerInstall } = useInstallPrompt();
   const [dismissedInstall, setDismissedInstall] = useState(false);
@@ -200,6 +202,7 @@ export default function App() {
     <div className="app">
       {/* ── Header ── */}
       <header className="app-header">
+        <div className="header-inner">
         <svg className="logo-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <rect x="2" y="4" width="2" height="16" fill="currentColor" />
           <rect x="6" y="4" width="1" height="16" fill="currentColor" />
@@ -208,7 +211,7 @@ export default function App() {
           <rect x="16" y="4" width="3" height="16" fill="currentColor" />
           <rect x="21" y="4" width="1" height="16" fill="currentColor" />
         </svg>
-        <div style={{ flex: 1 }}>
+        <div className="header-title">
           <h1>Scanner</h1>
           <div className="header-brand">Scan. Track. Export.</div>
         </div>
@@ -251,6 +254,7 @@ export default function App() {
               </svg>
             </button>
           </div>
+        </div>
         </div>
       </header>
 
@@ -388,7 +392,7 @@ export default function App() {
       </main>
 
       <footer className="app-footer">
-        <p className="app-footer-copy">For support, contact Rahul Khanvani</p>
+        <p className="app-footer-copy">Need help? Reach out to Rahul Khanvani</p>
       </footer>
 
       {/* ── Scanner Modal ── */}
@@ -550,6 +554,31 @@ export default function App() {
               <span className="sheet-row-text">
                 <span className="sheet-row-label">Export CSV</span>
                 <span className="sheet-row-hint">Share or save all scanned records</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="sheet-row"
+              disabled={refreshing}
+              onClick={async () => {
+                setRefreshing(true);
+                await refreshApp();
+              }}
+            >
+              <span className="sheet-row-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M20 12a8 8 0 1 1-2.2-5.5M20 4v5h-5"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+              <span className="sheet-row-text">
+                <span className="sheet-row-label">{refreshing ? 'Updating…' : 'Refresh app'}</span>
+                <span className="sheet-row-hint">Load the latest version of the scanner</span>
               </span>
             </button>
             <button

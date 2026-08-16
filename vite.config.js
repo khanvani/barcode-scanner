@@ -50,12 +50,13 @@ export default defineConfig({
           },
           {
             urlPattern: /^https?:\/\/.*\.(js|css)$/,
-            handler: "CacheFirst",
+            handler: "NetworkFirst",
             options: {
               cacheName: "app-code",
+              networkTimeoutSeconds: 3,
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 30,
+                maxAgeSeconds: 60 * 60 * 24 * 7,
               },
             },
           },
