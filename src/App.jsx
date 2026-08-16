@@ -200,6 +200,7 @@ export default function App() {
     <div className="app">
       {/* ── Header ── */}
       <header className="app-header">
+        <div className="header-inner">
         <svg className="logo-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <rect x="2" y="4" width="2" height="16" fill="currentColor" />
           <rect x="6" y="4" width="1" height="16" fill="currentColor" />
@@ -208,7 +209,7 @@ export default function App() {
           <rect x="16" y="4" width="3" height="16" fill="currentColor" />
           <rect x="21" y="4" width="1" height="16" fill="currentColor" />
         </svg>
-        <div style={{ flex: 1 }}>
+        <div className="header-title">
           <h1>Scanner</h1>
           <div className="header-brand">Scan. Track. Export.</div>
         </div>
@@ -251,6 +252,7 @@ export default function App() {
               </svg>
             </button>
           </div>
+        </div>
         </div>
       </header>
 
